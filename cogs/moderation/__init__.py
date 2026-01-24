@@ -1,0 +1,1 @@
+"""Moderation cog package."""

@@ -1,0 +1,132 @@
+"""
+MLBB Community Discord Bot
+Main entry point with dynamic cog loading.
+"""
+
+import discord
+import asyncio
+import logging
+from pathlib import Path
+from discord.ext import commands
+
+from config import DISCORD_TOKEN, BOT_CHANNEL_ID
+from services.database import db
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('mlbb_bot')
+
+# Configure intents
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+intents.reactions = True
+
+# Create bot instance
+bot = commands.Bot(command_prefix='!', intents=intents)
+
+
+@bot.event
+async def on_ready():
+    """Called when the bot is ready."""
+    logger.info(f'Bot started as {bot.user}')
+    
+    # Initialize database
+    await db.connect()
+    logger.info('Database connected')
+    
+    # Send startup message
+    channel = bot.get_channel(BOT_CHANNEL_ID)
+    if channel:
+        await channel.send("✅ Bot started successfully!")
+
+
+async def load_extensions():
+    """Dynamically load all cogs from the cogs directory."""
+    cogs_dir = Path(__file__).parent / "cogs"
+    
+    # List of cog modules to load
+    cog_modules = [
+        "cogs.leveling.xp_cog",
+        "cogs.moderation.mod_cog",
+        "cogs.tracker.boost_cog",
+    ]
+    
+    for cog in cog_modules:
+        try:
+            await bot.load_extension(cog)
+            logger.info(f'Loaded extension: {cog}')
+        except Exception as e:
+            logger.error(f'Failed to load {cog}: {e}')
+
+
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def reload(ctx: commands.Context, cog_name: str = None):
+    """
+    Reload cogs. Usage: !reload [cog_name]
+    If no cog specified, reloads all cogs.
+    """
+    cog_mapping = {
+        "xp": "cogs.leveling.xp_cog",
+        "leveling": "cogs.leveling.xp_cog",
+        "mod": "cogs.moderation.mod_cog",
+        "moderation": "cogs.moderation.mod_cog",
+        "boost": "cogs.tracker.boost_cog",
+        "tracker": "cogs.tracker.boost_cog",
+    }
+    
+    if cog_name:
+        # Reload specific cog
+        cog_path = cog_mapping.get(cog_name.lower())
+        if not cog_path:
+            return await ctx.reply(f"❌ Unknown cog: `{cog_name}`")
+        
+        try:
+            await bot.reload_extension(cog_path)
+            await ctx.reply(f"✅ Reloaded `{cog_name}`")
+            logger.info(f'Reloaded: {cog_path}')
+        except Exception as e:
+            await ctx.reply(f"❌ Failed to reload: {e}")
+    else:
+        # Reload all cogs
+        reloaded = []
+        failed = []
+        
+        for name, path in cog_mapping.items():
+            if path not in [cog_mapping[k] for k in list(cog_mapping.keys())[:list(cog_mapping.keys()).index(name)]]:
+                try:
+                    await bot.reload_extension(path)
+                    reloaded.append(name)
+                except Exception as e:
+                    failed.append(f"{name}: {e}")
+        
+        msg = f"✅ Reloaded: {', '.join(reloaded)}" if reloaded else ""
+        if failed:
+            msg += f"\n❌ Failed: {', '.join(failed)}"
+        
+        await ctx.reply(msg or "No cogs to reload")
+
+
+@bot.command()
+async def ping(ctx: commands.Context):
+    """Check bot latency."""
+    latency = round(bot.latency * 1000)
+    await ctx.reply(f"🏓 Pong! Latency: `{latency}ms`")
+
+
+async def main():
+    """Main entry point."""
+    async with bot:
+        await load_extensions()
+        await bot.start(DISCORD_TOKEN)
+
+
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info('Bot stopped by user')

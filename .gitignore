@@ -1,0 +1,18 @@
+# Environment secrets - NEVER commit this!
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+venv/
+.venv/
+
+# Database files
+*.db
+
+# IDE
+.vscode/
+.idea/
