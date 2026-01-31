@@ -9,8 +9,9 @@ import logging
 from pathlib import Path
 from discord.ext import commands
 
-from config import DISCORD_TOKEN, BOT_CHANNEL_ID
+from config import DISCORD_TOKEN
 from services.database import db
+from services.settings_service import settings_service
 
 # Setup logging
 logging.basicConfig(
@@ -38,10 +39,19 @@ async def on_ready():
     await db.connect()
     logger.info('Database connected')
     
+    # Sync slash commands
+    try:
+        synced = await bot.tree.sync()
+        logger.info(f'Synced {len(synced)} slash commands')
+    except Exception as e:
+        logger.error(f'Failed to sync commands: {e}')
+    
     # Send startup message
-    channel = bot.get_channel(BOT_CHANNEL_ID)
-    if channel:
-        await channel.send("✅ Bot started successfully!")
+    bot_channel_id = await settings_service.get_int("bot_channel_id")
+    if bot_channel_id:
+        channel = bot.get_channel(bot_channel_id)
+        if channel:
+            await channel.send("✅ Bot started successfully!")
 
 
 async def load_extensions():
@@ -53,6 +63,7 @@ async def load_extensions():
         "cogs.leveling.xp_cog",
         "cogs.moderation.mod_cog",
         "cogs.tracker.boost_cog",
+        "cogs.setup.setup_cog",
     ]
     
     for cog in cog_modules:
@@ -77,6 +88,7 @@ async def reload(ctx: commands.Context, cog_name: str = None):
         "moderation": "cogs.moderation.mod_cog",
         "boost": "cogs.tracker.boost_cog",
         "tracker": "cogs.tracker.boost_cog",
+        "setup": "cogs.setup.setup_cog",
     }
     
     if cog_name:

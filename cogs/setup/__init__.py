@@ -1,0 +1,1 @@
+"""Setup cog package."""

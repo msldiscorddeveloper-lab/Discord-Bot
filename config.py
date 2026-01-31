@@ -46,28 +46,21 @@ XP_CONFIG = {
 BATCH_UPDATE_INTERVAL = 10
 
 # ─────────────────────────────────────────────────────────────────────
-# Booster Rewards System
+# Booster Tier Configuration (role IDs stored in database via !setup)
 # ─────────────────────────────────────────────────────────────────────
 
-# Private Booster Channels
-BOOSTER_CHAT_CHANNEL_ID = int(os.getenv("BOOSTER_CHAT_CHANNEL_ID", "0"))
-BOOSTER_LOUNGE_VC_ID = int(os.getenv("BOOSTER_LOUNGE_VC_ID", "0"))
-
-# Booster Tier Configuration
 BOOSTER_TIERS = {
     "server": {
         "name": "Server Booster",
-        "role_id": int(os.getenv("SERVER_BOOSTER_ROLE_ID", "0")),
         "months_required": 0,
         "xp_multiplier": 1.5,
-        "token_multiplier": 1.5,  # MSL Token multiplier
+        "token_multiplier": 1.5,
         "shop_discount": 0.20,
-        "raffle_entries": 1,      # Weekly diamond raffle
-        "daily_pouches": 1,       # Moniyan Mystery Pouches
+        "raffle_entries": 1,
+        "daily_pouches": 1,
     },
     "veteran": {
         "name": "Veteran Booster",
-        "role_id": int(os.getenv("VETERAN_BOOSTER_ROLE_ID", "0")),
         "months_required": 3,
         "xp_multiplier": 1.75,
         "token_multiplier": 1.75,
@@ -77,48 +70,12 @@ BOOSTER_TIERS = {
     },
     "mythic": {
         "name": "Mythic Booster",
-        "role_id": int(os.getenv("MYTHIC_BOOSTER_ROLE_ID", "0")),
         "months_required": 5,
         "xp_multiplier": 2.0,
         "token_multiplier": 2.0,
         "shop_discount": 0.20,
         "raffle_entries": 8,
         "daily_pouches": 3,
-        "spotlight_eligible": True,  # Booster of the Week
+        "spotlight_eligible": True,
     },
 }
-
-# Booster Color Roles (15 exclusive colors)
-# Format: {"display_name": role_id}
-def _parse_color_roles():
-    """Parse color role IDs from environment."""
-    roles = {}
-    color_names = [
-        "Ruby Red", "Sapphire Blue", "Emerald Green", "Amethyst Purple",
-        "Topaz Gold", "Diamond White", "Obsidian Black", "Rose Pink",
-        "Ocean Teal", "Sunset Orange", "Midnight Navy", "Forest Green",
-        "Coral Pink", "Arctic Blue", "Royal Purple"
-    ]
-    for i, name in enumerate(color_names, 1):
-        role_id = int(os.getenv(f"BOOSTER_COLOR_ROLE_{i}", "0"))
-        if role_id:
-            roles[name] = role_id
-    return roles
-
-BOOSTER_COLOR_ROLES = _parse_color_roles()
-
-# Booster Emblem Roles (Tier 2+ only)
-BOOSTER_EMBLEM_ROLES = {
-    "💠": int(os.getenv("BOOSTER_EMBLEM_DIAMOND", "0")),
-    "⚜️": int(os.getenv("BOOSTER_EMBLEM_FLEUR", "0")),
-    "🔱": int(os.getenv("BOOSTER_EMBLEM_TRIDENT", "0")),
-    "⭐": int(os.getenv("BOOSTER_EMBLEM_STAR", "0")),
-    "👑": int(os.getenv("BOOSTER_EMBLEM_CROWN", "0")),
-}
-
-# Spotlight role for "Booster of the Week"
-BOOSTER_SPOTLIGHT_ROLE_ID = int(os.getenv("BOOSTER_SPOTLIGHT_ROLE_ID", "0"))
-
-# List of all booster role IDs for easy lookup
-BOOSTER_ROLE_IDS = [tier["role_id"] for tier in BOOSTER_TIERS.values() if tier["role_id"]]
-

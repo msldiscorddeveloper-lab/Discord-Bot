@@ -1,6 +1,7 @@
 """
 Boost Tracker Cog - Full booster rewards system.
 Manages tiered roles, color/emblem customization, badges, and perks.
+Uses database-stored settings configured via !setup commands.
 """
 
 import discord
@@ -9,13 +10,10 @@ from datetime import datetime, timedelta
 from discord.ext import commands, tasks
 from discord import app_commands
 
-from config import (
-    BOOST_ANNOUNCE_CHANNEL_ID, BOOSTER_TIERS, BOOSTER_COLOR_ROLES,
-    BOOSTER_EMBLEM_ROLES, BOOSTER_SPOTLIGHT_ROLE_ID,
-    BOOSTER_CHAT_CHANNEL_ID, BOOSTER_LOUNGE_VC_ID
-)
+from config import BOOSTER_TIERS
 from services.xp_service import xp_service
 from services.database import db
+from services.settings_service import settings_service
 from utils.embeds import create_boost_announcement_embed
 
 
@@ -34,6 +32,24 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
     def cog_unload(self):
         self.check_tier_promotions.cancel()
         self.weekly_spotlight.cancel()
+    
+    # ─────────────────────────────────────────────────────────────────────
+    # Settings Helpers (load from database)
+    # ─────────────────────────────────────────────────────────────────────
+    
+    async def _get_tier_role_ids(self) -> dict:
+        """Get tier role IDs from database."""
+        return {
+            "server": await settings_service.get_int("server_booster_role_id"),
+            "veteran": await settings_service.get_int("veteran_booster_role_id"),
+            "mythic": await settings_service.get_int("mythic_booster_role_id"),
+        }
+    
+    async def _get_spotlight_role_id(self) -> int:
+        return await settings_service.get_int("booster_spotlight_role_id")
+    
+    async def _get_announce_channel_id(self) -> int:
+        return await settings_service.get_int("boost_announce_channel_id")
     
     # ─────────────────────────────────────────────────────────────────────
     # Helper Methods
@@ -55,20 +71,26 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         days = (datetime.now() - member.premium_since.replace(tzinfo=None)).days
         return self._get_tier_for_months(days // 30)
     
-    async def _grant_tier_role(self, member: discord.Member, tier: dict) -> bool:
+    async def _grant_tier_role(self, member: discord.Member, tier_key: str, tier: dict) -> bool:
         """Grant tier role and remove other booster tier roles."""
         guild = member.guild
-        target_role = guild.get_role(tier["role_id"])
+        role_ids = await self._get_tier_role_ids()
+        target_role_id = role_ids.get(tier_key, 0)
         
+        if not target_role_id:
+            return False
+        
+        target_role = guild.get_role(target_role_id)
         if not target_role:
             return False
         
         try:
             # Remove other tier roles
-            for t in BOOSTER_TIERS.values():
-                role = guild.get_role(t["role_id"])
-                if role and role in member.roles and role != target_role:
-                    await member.remove_roles(role)
+            for key, rid in role_ids.items():
+                if rid and rid != target_role_id:
+                    role = guild.get_role(rid)
+                    if role and role in member.roles:
+                        await member.remove_roles(role)
             
             if target_role not in member.roles:
                 await member.add_roles(target_role, reason=f"Booster: {tier['name']}")
@@ -83,10 +105,12 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         roles_to_remove = []
         
         # Tier roles
-        for tier in BOOSTER_TIERS.values():
-            role = guild.get_role(tier["role_id"])
-            if role and role in member.roles:
-                roles_to_remove.append(role)
+        role_ids = await self._get_tier_role_ids()
+        for rid in role_ids.values():
+            if rid:
+                role = guild.get_role(rid)
+                if role and role in member.roles:
+                    roles_to_remove.append(role)
         
         # Color role
         color_role_id = await self._get_user_color_role(member.id)
@@ -103,9 +127,11 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
                 roles_to_remove.append(emblem_role)
         
         # Spotlight role
-        spotlight_role = guild.get_role(BOOSTER_SPOTLIGHT_ROLE_ID)
-        if spotlight_role and spotlight_role in member.roles:
-            roles_to_remove.append(spotlight_role)
+        spotlight_id = await self._get_spotlight_role_id()
+        if spotlight_id:
+            spotlight_role = guild.get_role(spotlight_id)
+            if spotlight_role and spotlight_role in member.roles:
+                roles_to_remove.append(spotlight_role)
         
         for role in roles_to_remove:
             try:
@@ -158,10 +184,11 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
                 return
         self.recent_boosts[user_id] = now
         
+        tier_key = "server"
         tier = BOOSTER_TIERS["server"]
         
         # Grant role
-        await self._grant_tier_role(member, tier)
+        await self._grant_tier_role(member, tier_key, tier)
         
         # Set DB perks
         await xp_service.set_booster_perks(
@@ -180,13 +207,15 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         await self._add_badge(user_id, "S1 Booster")
         
         # Announce
-        channel = self.bot.get_channel(BOOST_ANNOUNCE_CHANNEL_ID)
-        if channel:
-            embed = create_boost_announcement_embed(member)
-            try:
-                await channel.send(embed=embed)
-            except discord.Forbidden:
-                pass
+        channel_id = await self._get_announce_channel_id()
+        if channel_id:
+            channel = self.bot.get_channel(channel_id)
+            if channel:
+                embed = create_boost_announcement_embed(member)
+                try:
+                    await channel.send(embed=embed)
+                except discord.Forbidden:
+                    pass
         
         print(f"[BoostTracker] {member.display_name} boosted! Badge added.")
     
@@ -227,7 +256,7 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
             
             current = await xp_service.get_user_perks(member.id)
             if tier["xp_multiplier"] > current.get('xp_multiplier', 1.0):
-                await self._grant_tier_role(member, tier)
+                await self._grant_tier_role(member, tier_key, tier)
                 await xp_service.set_booster_perks(
                     member.id, tier["xp_multiplier"], tier["shop_discount"]
                 )
@@ -248,7 +277,11 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
             return
         
         guild = self.bot.guilds[0]
-        spotlight_role = guild.get_role(BOOSTER_SPOTLIGHT_ROLE_ID)
+        spotlight_id = await self._get_spotlight_role_id()
+        if not spotlight_id:
+            return
+        
+        spotlight_role = guild.get_role(spotlight_id)
         if not spotlight_role:
             return
         
@@ -273,15 +306,17 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
             try:
                 await winner.add_roles(spotlight_role, reason="Booster of the Week")
                 
-                channel = self.bot.get_channel(BOOST_ANNOUNCE_CHANNEL_ID)
-                if channel:
-                    embed = discord.Embed(
-                        title="🌟 Booster of the Week!",
-                        description=f"Congratulations {winner.mention}!\n\nThank you for your continued support! 💜",
-                        color=discord.Color.gold()
-                    )
-                    embed.set_thumbnail(url=winner.display_avatar.url)
-                    await channel.send(embed=embed)
+                channel_id = await self._get_announce_channel_id()
+                if channel_id:
+                    channel = self.bot.get_channel(channel_id)
+                    if channel:
+                        embed = discord.Embed(
+                            title="🌟 Booster of the Week!",
+                            description=f"Congratulations {winner.mention}!\n\nThank you for your continued support! 💜",
+                            color=discord.Color.gold()
+                        )
+                        embed.set_thumbnail(url=winner.display_avatar.url)
+                        await channel.send(embed=embed)
             except discord.Forbidden:
                 pass
     
@@ -295,7 +330,7 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
     
     @app_commands.command(name="booster-color", description="Choose an exclusive booster color role")
     async def booster_color(self, interaction: discord.Interaction):
-        """Let boosters choose from 15 exclusive color roles."""
+        """Let boosters choose from exclusive color roles."""
         member = interaction.user
         tier_key, tier = self._get_member_tier(member)
         
@@ -304,15 +339,15 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
                 "❌ You must be a Server Booster to use this!", ephemeral=True
             )
         
-        if not BOOSTER_COLOR_ROLES:
+        color_roles = await settings_service.get_color_roles()
+        if not color_roles:
             return await interaction.response.send_message(
-                "❌ No color roles configured yet.", ephemeral=True
+                "❌ No color roles configured. Ask an admin to run `!setup color add`.", ephemeral=True
             )
         
-        # Create dropdown
         options = [
             discord.SelectOption(label=name, value=str(role_id))
-            for name, role_id in BOOSTER_COLOR_ROLES.items()
+            for name, role_id in color_roles.items()
             if role_id
         ]
         
@@ -361,16 +396,22 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
                 "Keep boosting to unlock at 3 months! 💎", ephemeral=True
             )
         
-        available = {k: v for k, v in BOOSTER_EMBLEM_ROLES.items() if v}
-        if not available:
+        emblem_roles = await settings_service.get_emblem_roles()
+        if not emblem_roles:
             return await interaction.response.send_message(
-                "❌ No emblem roles configured yet.", ephemeral=True
+                "❌ No emblem roles configured. Ask an admin to run `!setup emblem add`.", ephemeral=True
             )
         
         options = [
             discord.SelectOption(label=f"Emblem {emoji}", value=str(role_id), emoji=emoji)
-            for emoji, role_id in available.items()
+            for emoji, role_id in emblem_roles.items()
+            if role_id
         ]
+        
+        if not options:
+            return await interaction.response.send_message(
+                "❌ No emblem roles available.", ephemeral=True
+            )
         
         select = discord.ui.Select(placeholder="Choose your emblem...", options=options)
         
