@@ -168,16 +168,24 @@ async def main():
         await bot.start(DISCORD_TOKEN)
 
 
-async def shutdown():
-    """Graceful shutdown."""
-    logger.info('Shutting down...')
-    await db.disconnect()
-    await bot.close()
-    logger.info('Bot stopped')
-
-
 if __name__ == '__main__':
+    import signal
+    import sys
+    
+    def signal_handler(sig, frame):
+        """Handle Ctrl+C gracefully."""
+        logger.info('Received shutdown signal, closing...')
+        # Schedule the bot close in the event loop
+        asyncio.get_event_loop().create_task(bot.close())
+        sys.exit(0)
+    
+    # Register signal handler for Windows
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info('Bot stopped by user')
+    except SystemExit:
+        pass
