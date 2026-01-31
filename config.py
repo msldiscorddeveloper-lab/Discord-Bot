@@ -4,6 +4,7 @@ Loads environment variables from .env file.
 """
 
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -15,8 +16,15 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN not found in environment variables!")
 
-# Database
-DATABASE_PATH = os.getenv("DATABASE_PATH", "levels.db")
+# Database Configuration
+DB_CONFIG = {
+    "host": os.getenv("DB_HOST", "localhost"),
+    "port": int(os.getenv("DB_PORT", 3306)),
+    "user": os.getenv("DB_USER", "root"),
+    "password": os.getenv("DB_PASSWORD", ""),
+    "db": os.getenv("DB_NAME", "discord_bot"),
+    "autocommit": True,
+}
 
 
 # XP Settings

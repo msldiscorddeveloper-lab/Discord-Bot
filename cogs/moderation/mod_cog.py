@@ -110,8 +110,8 @@ class ModCog(commands.Cog, name="Moderation"):
         """Apply XP/Token lock to user."""
         lock_until = datetime.now() + timedelta(hours=hours)
         await db.execute('''
-            INSERT INTO users (user_id, xp_locked, xp_lock_until) VALUES (?, 1, ?)
-            ON CONFLICT(user_id) DO UPDATE SET xp_locked = 1, xp_lock_until = ?
+            INSERT INTO users (user_id, xp_locked, xp_lock_until) VALUES (%s, 1, %s)
+            ON DUPLICATE KEY UPDATE xp_locked = 1, xp_lock_until = %s
         ''', (user_id, lock_until.isoformat(), lock_until.isoformat()))
     
     async def _wipe_economy(self, user_id: int):
@@ -120,7 +120,7 @@ class ModCog(commands.Cog, name="Moderation"):
             UPDATE users SET 
                 xp = 0, tokens = 0, xp_multiplier = 1.0, token_multiplier = 1.0,
                 shop_discount = 0.0, raffle_entries = 0, pouches_today = 0
-            WHERE user_id = ?
+            WHERE user_id = %s
         ''', (user_id,))
     
     # ─────────────────────────────────────────────────────────────────────
@@ -162,7 +162,7 @@ class ModCog(commands.Cog, name="Moderation"):
         if user.is_timed_out():
             status_parts.append("🔇 **Muted**")
         
-        result = await db.fetch_one('SELECT xp_locked, is_restricted FROM users WHERE user_id = ?', (user.id,))
+        result = await db.fetch_one('SELECT xp_locked, is_restricted FROM users WHERE user_id = %s', (user.id,))
         if result:
             if result['xp_locked']:
                 status_parts.append("⛔ **XP Locked**")
@@ -241,8 +241,8 @@ class ModCog(commands.Cog, name="Moderation"):
         
         # Mark as restricted in DB
         await db.execute('''
-            INSERT INTO users (user_id, is_restricted) VALUES (?, 1)
-            ON CONFLICT(user_id) DO UPDATE SET is_restricted = 1
+            INSERT INTO users (user_id, is_restricted) VALUES (%s, 1)
+            ON DUPLICATE KEY UPDATE is_restricted = 1
         ''', (user.id,))
         
         # Remove verified role if configured
@@ -270,7 +270,7 @@ class ModCog(commands.Cog, name="Moderation"):
     @app_commands.default_permissions(moderate_members=True)
     async def unrestrict(self, inter: discord.Interaction, user: discord.Member):
         """Remove restriction from user."""
-        await db.execute('UPDATE users SET is_restricted = 0 WHERE user_id = ?', (user.id,))
+        await db.execute('UPDATE users SET is_restricted = 0 WHERE user_id = %s', (user.id,))
         
         # Restore verified role
         verified_role_id = await settings_service.get_int("verified_role_id")

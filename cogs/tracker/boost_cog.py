@@ -140,23 +140,23 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
                 pass
     
     async def _get_user_color_role(self, user_id: int) -> int | None:
-        result = await db.fetch_one('SELECT color_role_id FROM users WHERE user_id = ?', (user_id,))
+        result = await db.fetch_one('SELECT color_role_id FROM users WHERE user_id = %s', (user_id,))
         return result['color_role_id'] if result else None
     
     async def _get_user_emblem_role(self, user_id: int) -> int | None:
-        result = await db.fetch_one('SELECT emblem_role_id FROM users WHERE user_id = ?', (user_id,))
+        result = await db.fetch_one('SELECT emblem_role_id FROM users WHERE user_id = %s', (user_id,))
         return result['emblem_role_id'] if result else None
     
     async def _add_badge(self, user_id: int, badge: str):
         """Add a badge to user's profile."""
-        result = await db.fetch_one('SELECT badges FROM users WHERE user_id = ?', (user_id,))
+        result = await db.fetch_one('SELECT badges FROM users WHERE user_id = %s', (user_id,))
         badges = json.loads(result['badges']) if result and result['badges'] else []
         if badge not in badges:
             badges.append(badge)
-            await db.execute('UPDATE users SET badges = ? WHERE user_id = ?', (json.dumps(badges), user_id))
+            await db.execute('UPDATE users SET badges = %s WHERE user_id = %s', (json.dumps(badges), user_id))
     
     async def _get_badges(self, user_id: int) -> list:
-        result = await db.fetch_one('SELECT badges FROM users WHERE user_id = ?', (user_id,))
+        result = await db.fetch_one('SELECT badges FROM users WHERE user_id = %s', (user_id,))
         return json.loads(result['badges']) if result and result['badges'] else []
     
     # ─────────────────────────────────────────────────────────────────────
@@ -199,8 +199,8 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         
         # Update token multiplier
         await db.execute('''
-            UPDATE users SET token_multiplier = ?, raffle_entries = ?
-            WHERE user_id = ?
+            UPDATE users SET token_multiplier = %s, raffle_entries = %s
+            WHERE user_id = %s
         ''', (tier["token_multiplier"], tier["raffle_entries"], user_id))
         
         # Add S1 Booster badge
@@ -228,7 +228,7 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         await db.execute('''
             UPDATE users SET token_multiplier = 1.0, raffle_entries = 0,
                 color_role_id = NULL, emblem_role_id = NULL
-            WHERE user_id = ?
+            WHERE user_id = %s
         ''', (member.id,))
         
         print(f"[BoostTracker] {member.display_name}'s boost expired. Perks removed, badges kept.")
@@ -261,8 +261,8 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
                     member.id, tier["xp_multiplier"], tier["shop_discount"]
                 )
                 await db.execute('''
-                    UPDATE users SET token_multiplier = ?, raffle_entries = ?
-                    WHERE user_id = ?
+                    UPDATE users SET token_multiplier = %s, raffle_entries = %s
+                    WHERE user_id = %s
                 ''', (tier["token_multiplier"], tier["raffle_entries"], member.id))
                 print(f"[BoostTracker] Promoted {member.display_name} to {tier['name']}")
     
@@ -374,7 +374,7 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
             
             # Add new color role
             await inter.user.add_roles(role)
-            await db.execute('UPDATE users SET color_role_id = ? WHERE user_id = ?', (role_id, inter.user.id))
+            await db.execute('UPDATE users SET color_role_id = %s WHERE user_id = %s', (role_id, inter.user.id))
             
             await inter.response.send_message(f"✅ Your color is now **{role.name}**!", ephemeral=True)
         
@@ -430,7 +430,7 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
                     await inter.user.remove_roles(old_role)
             
             await inter.user.add_roles(role)
-            await db.execute('UPDATE users SET emblem_role_id = ? WHERE user_id = ?', (role_id, inter.user.id))
+            await db.execute('UPDATE users SET emblem_role_id = %s WHERE user_id = %s', (role_id, inter.user.id))
             
             await inter.response.send_message(f"✅ Your emblem is now **{role.name}**!", ephemeral=True)
         

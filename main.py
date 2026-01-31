@@ -14,9 +14,13 @@ from services.database import db
 from services.settings_service import settings_service
 
 # Setup logging
+import sys
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 logger = logging.getLogger('mlbb_bot')
 
@@ -36,7 +40,7 @@ async def on_ready():
     logger.info(f'Bot started as {bot.user}')
     
     # Initialize database
-    await db.connect()
+    await db.get_pool()
     logger.info('Database connected')
     
     # Check for missing settings

@@ -1,99 +1,138 @@
 """
-Async database connection management using aiosqlite.
+Async database connection management using aiomysql.
 Provides a centralized database pool for all services.
 """
 
-import aiosqlite
-from config import DATABASE_PATH
+import aiomysql
+import logging
+from config import DB_CONFIG
 
+logger = logging.getLogger('mlbb_bot')
 
 class Database:
-    """Async SQLite database wrapper."""
+    """Async MySQL database wrapper."""
     
     _instance = None
-    _connection = None
+    _pool = None
     
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    async def connect(self):
-        """Initialize the database connection."""
-        if self._connection is None:
-            self._connection = await aiosqlite.connect(DATABASE_PATH)
-            self._connection.row_factory = aiosqlite.Row
-            await self._init_tables()
-        return self._connection
+    async def get_pool(self):
+        """Initialize the database connection pool."""
+        if self._pool is None:
+            try:
+                self._pool = await aiomysql.create_pool(**DB_CONFIG)
+                logger.info(f"Connected to MySQL database: {DB_CONFIG['db']}")
+                await self._init_tables()
+            except Exception as e:
+                logger.error(f"Failed to connect to MySQL: {e}")
+                raise
+        return self._pool
     
     async def _init_tables(self):
         """Create tables if they don't exist."""
-        await self._connection.execute('''
+        await self.execute('''
             CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                xp INTEGER DEFAULT 0,
-                tokens INTEGER DEFAULT 0,
-                xp_multiplier REAL DEFAULT 1.0,
-                token_multiplier REAL DEFAULT 1.0,
-                shop_discount REAL DEFAULT 0.0,
+                user_id BIGINT PRIMARY KEY,
+                xp INT DEFAULT 0,
+                tokens INT DEFAULT 0,
+                xp_multiplier FLOAT DEFAULT 1.0,
+                token_multiplier FLOAT DEFAULT 1.0,
+                shop_discount FLOAT DEFAULT 0.0,
                 boost_start_date DATETIME DEFAULT NULL,
-                badges TEXT DEFAULT '[]',
-                color_role_id INTEGER DEFAULT NULL,
-                emblem_role_id INTEGER DEFAULT NULL,
-                raffle_entries INTEGER DEFAULT 0,
-                pouches_today INTEGER DEFAULT 0,
+                badges TEXT,
+                color_role_id BIGINT DEFAULT NULL,
+                emblem_role_id BIGINT DEFAULT NULL,
+                raffle_entries INT DEFAULT 0,
+                pouches_today INT DEFAULT 0,
                 last_pouch_date DATE DEFAULT NULL,
-                xp_locked INTEGER DEFAULT 0,
+                xp_locked TINYINT DEFAULT 0,
                 xp_lock_until DATETIME DEFAULT NULL,
-                is_restricted INTEGER DEFAULT 0
+                is_restricted TINYINT DEFAULT 0,
+                event_points INT DEFAULT 0
             )
         ''')
         
-        await self._connection.execute('''
+        await self.execute('''
             CREATE TABLE IF NOT EXISTS mod_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                action_type TEXT NOT NULL,
-                moderator_id INTEGER NOT NULL,
-                target_id INTEGER NOT NULL,
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                action_type VARCHAR(50) NOT NULL,
+                moderator_id BIGINT NOT NULL,
+                target_id BIGINT NOT NULL,
                 reason TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         
         # Server settings table for storing role/channel IDs
-        await self._connection.execute('''
+        await self.execute('''
             CREATE TABLE IF NOT EXISTS server_settings (
-                key TEXT PRIMARY KEY,
+                `key` VARCHAR(255) PRIMARY KEY,
                 value TEXT NOT NULL
             )
         ''')
         
-        await self._connection.commit()
+        # Event system tables
+        await self.execute('''
+            CREATE TABLE IF NOT EXISTS event_codes (
+                code VARCHAR(50) PRIMARY KEY,
+                reward_tokens INT DEFAULT 0,
+                reward_ep INT DEFAULT 0,
+                expires_at DATETIME,
+                max_uses INT DEFAULT 0,
+                uses_count INT DEFAULT 0,
+                required_vc_id BIGINT,
+                creator_id BIGINT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        await self.execute('''
+            CREATE TABLE IF NOT EXISTS event_redemptions (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                code VARCHAR(50),
+                user_id BIGINT,
+                redeemed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (code) REFERENCES event_codes(code) ON DELETE CASCADE
+            )
+        ''')
     
     async def close(self):
         """Close the database connection."""
-        if self._connection:
-            await self._connection.close()
-            self._connection = None
+        if self._pool:
+            self._pool.close()
+            await self._pool.wait_closed()
+            self._pool = None
     
     async def execute(self, query: str, params: tuple = ()):
-        """Execute a query and return cursor."""
-        conn = await self.connect()
-        cursor = await conn.execute(query, params)
-        await conn.commit()
-        return cursor
+        """Execute a query and return cursor (or lastrowid for inserts)."""
+        pool = await self.get_pool()
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, params)
+                # For inserts, return the last ID
+                if query.strip().upper().startswith("INSERT"):
+                    return cur
+                return cur
     
     async def fetch_one(self, query: str, params: tuple = ()):
         """Fetch a single row."""
-        conn = await self.connect()
-        cursor = await conn.execute(query, params)
-        return await cursor.fetchone()
+        pool = await self.get_pool()
+        async with pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute(query, params)
+                return await cur.fetchone()
     
     async def fetch_all(self, query: str, params: tuple = ()):
         """Fetch all rows."""
-        conn = await self.connect()
-        cursor = await conn.execute(query, params)
-        return await cursor.fetchall()
+        pool = await self.get_pool()
+        async with pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute(query, params)
+                return await cur.fetchall()
 
 
 # Singleton instance

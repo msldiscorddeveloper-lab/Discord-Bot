@@ -36,7 +36,7 @@ class SettingsService:
     async def get(self, key: str) -> str:
         """Get a setting value."""
         result = await db.fetch_one(
-            'SELECT value FROM server_settings WHERE key = ?',
+            'SELECT value FROM server_settings WHERE `key` = %s',
             (key,)
         )
         if result:
@@ -54,9 +54,9 @@ class SettingsService:
     async def set(self, key: str, value: str) -> None:
         """Set a setting value."""
         await db.execute('''
-            INSERT INTO server_settings (key, value) VALUES (?, ?)
-            ON CONFLICT(key) DO UPDATE SET value = ?
-        ''', (key, value, value))
+            INSERT INTO server_settings (`key`, value) VALUES (%s, %s)
+            ON DUPLICATE KEY UPDATE value = VALUES(value)
+        ''', (key, value))
     
     async def get_all(self) -> dict:
         """Get all settings."""

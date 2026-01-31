@@ -31,7 +31,7 @@ class ModService:
         """
         cursor = await db.execute('''
             INSERT INTO mod_logs (action_type, moderator_id, target_id, reason)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
         ''', (action_type, moderator_id, target_id, reason))
         
         return cursor.lastrowid
@@ -39,20 +39,13 @@ class ModService:
     async def get_user_history(self, user_id: int, limit: int = 10) -> list:
         """
         Get moderation history for a specific user.
-        
-        Args:
-            user_id: Discord user ID
-            limit: Maximum number of records to return
-            
-        Returns:
-            List of moderation log entries
         """
         rows = await db.fetch_all('''
             SELECT id, action_type, moderator_id, reason, timestamp
             FROM mod_logs
-            WHERE target_id = ?
+            WHERE target_id = %s
             ORDER BY timestamp DESC
-            LIMIT ?
+            LIMIT %s
         ''', (user_id, limit))
         
         return [dict(row) for row in rows]
@@ -60,20 +53,13 @@ class ModService:
     async def get_mod_actions(self, moderator_id: int, limit: int = 10) -> list:
         """
         Get actions performed by a specific moderator.
-        
-        Args:
-            moderator_id: Discord user ID of the moderator
-            limit: Maximum number of records to return
-            
-        Returns:
-            List of moderation log entries
         """
         rows = await db.fetch_all('''
             SELECT id, action_type, target_id, reason, timestamp
             FROM mod_logs
-            WHERE moderator_id = ?
+            WHERE moderator_id = %s
             ORDER BY timestamp DESC
-            LIMIT ?
+            LIMIT %s
         ''', (moderator_id, limit))
         
         return [dict(row) for row in rows]
@@ -81,25 +67,18 @@ class ModService:
     async def get_action_count(self, user_id: int, action_type: str = None) -> int:
         """
         Count moderation actions against a user.
-        
-        Args:
-            user_id: Discord user ID
-            action_type: Optional filter by action type
-            
-        Returns:
-            Count of matching actions
         """
         if action_type:
             result = await db.fetch_one('''
                 SELECT COUNT(*) as count 
                 FROM mod_logs 
-                WHERE target_id = ? AND action_type = ?
+                WHERE target_id = %s AND action_type = %s
             ''', (user_id, action_type))
         else:
             result = await db.fetch_one('''
                 SELECT COUNT(*) as count 
                 FROM mod_logs 
-                WHERE target_id = ?
+                WHERE target_id = %s
             ''', (user_id,))
         
         return result['count'] if result else 0
