@@ -469,7 +469,7 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         
         embed = discord.Embed(
             title=f"💎 {tier['name']} Perks",
-            color=discord.Color.nitro_pink()
+            color=discord.Color(0xf47fff)
         )
         embed.add_field(name="XP Multiplier", value=f"{tier['xp_multiplier']}x", inline=True)
         embed.add_field(name="Token Multiplier", value=f"{tier['token_multiplier']}x", inline=True)
@@ -506,7 +506,7 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         embed = discord.Embed(
             title="💎 Server Boosters",
             description=f"**{len(boosters)}** members boosting!",
-            color=discord.Color.nitro_pink()
+            color=discord.Color(0xf47fff)
         )
         
         lines = []
