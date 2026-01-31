@@ -31,7 +31,18 @@ class Database:
         await self._connection.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
-                xp INTEGER DEFAULT 0
+                xp INTEGER DEFAULT 0,
+                tokens INTEGER DEFAULT 0,
+                xp_multiplier REAL DEFAULT 1.0,
+                token_multiplier REAL DEFAULT 1.0,
+                shop_discount REAL DEFAULT 0.0,
+                boost_start_date DATETIME DEFAULT NULL,
+                badges TEXT DEFAULT '[]',
+                color_role_id INTEGER DEFAULT NULL,
+                emblem_role_id INTEGER DEFAULT NULL,
+                raffle_entries INTEGER DEFAULT 0,
+                pouches_today INTEGER DEFAULT 0,
+                last_pouch_date DATE DEFAULT NULL
             )
         ''')
         
