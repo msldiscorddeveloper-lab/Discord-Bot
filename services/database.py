@@ -42,7 +42,10 @@ class Database:
                 emblem_role_id INTEGER DEFAULT NULL,
                 raffle_entries INTEGER DEFAULT 0,
                 pouches_today INTEGER DEFAULT 0,
-                last_pouch_date DATE DEFAULT NULL
+                last_pouch_date DATE DEFAULT NULL,
+                xp_locked INTEGER DEFAULT 0,
+                xp_lock_until DATETIME DEFAULT NULL,
+                is_restricted INTEGER DEFAULT 0
             )
         ''')
         

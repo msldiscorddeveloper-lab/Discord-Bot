@@ -15,14 +15,16 @@ class SettingsService:
         "boost_announce_channel_id": "0",
         "booster_chat_channel_id": "0",
         "booster_lounge_vc_id": "0",
+        "mod_log_channel_id": "0",
         
         # Tier roles
         "server_booster_role_id": "0",
         "veteran_booster_role_id": "0",
         "mythic_booster_role_id": "0",
         
-        # Spotlight
+        # Other roles
         "booster_spotlight_role_id": "0",
+        "verified_role_id": "0",
         
         # Color roles (stored as JSON list)
         "booster_color_roles": "[]",

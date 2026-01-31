@@ -33,6 +33,7 @@ class SetupCog(commands.Cog, name="Setup"):
             ("Boost Announce", settings.get("boost_announce_channel_id", "0")),
             ("Booster Chat", settings.get("booster_chat_channel_id", "0")),
             ("Booster Lounge VC", settings.get("booster_lounge_vc_id", "0")),
+            ("Mod Log", settings.get("mod_log_channel_id", "0")),
         ]
         channel_text = "\n".join([
             f"**{name}:** <#{cid}>" if cid != "0" else f"**{name}:** Not set"
@@ -46,6 +47,7 @@ class SetupCog(commands.Cog, name="Setup"):
             ("Veteran Booster", settings.get("veteran_booster_role_id", "0")),
             ("Mythic Booster", settings.get("mythic_booster_role_id", "0")),
             ("Spotlight", settings.get("booster_spotlight_role_id", "0")),
+            ("Verified", settings.get("verified_role_id", "0")),
         ]
         role_text = "\n".join([
             f"**{name}:** <@&{rid}>" if rid != "0" else f"**{name}:** Not set"
@@ -68,11 +70,12 @@ class SetupCog(commands.Cog, name="Setup"):
     @setup.command(name="channel")
     @commands.has_permissions(administrator=True)
     async def setup_channel(self, ctx: commands.Context, setting: str, channel: discord.TextChannel):
-        """Set a channel. Settings: bot, announce, booster_chat"""
+        """Set a channel. Settings: bot, announce, booster_chat, modlog"""
         key_map = {
             "bot": "bot_channel_id",
             "announce": "boost_announce_channel_id",
             "booster_chat": "booster_chat_channel_id",
+            "modlog": "mod_log_channel_id",
         }
         
         if setting not in key_map:
@@ -95,12 +98,13 @@ class SetupCog(commands.Cog, name="Setup"):
     @setup.command(name="role")
     @commands.has_permissions(administrator=True)
     async def setup_role(self, ctx: commands.Context, setting: str, role: discord.Role):
-        """Set a role. Settings: server, veteran, mythic, spotlight"""
+        """Set a role. Settings: server, veteran, mythic, spotlight, verified"""
         key_map = {
             "server": "server_booster_role_id",
             "veteran": "veteran_booster_role_id",
             "mythic": "mythic_booster_role_id",
             "spotlight": "booster_spotlight_role_id",
+            "verified": "verified_role_id",
         }
         
         if setting not in key_map:

@@ -18,17 +18,33 @@ class XpService:
         )
         return result['xp_multiplier'] if result and result['xp_multiplier'] else 1.0
     
+    async def is_xp_locked(self, user_id: int) -> bool:
+        """Check if user is XP locked (from warn)."""
+        result = await db.fetch_one(
+            'SELECT xp_locked, xp_lock_until FROM users WHERE user_id = ?',
+            (user_id,)
+        )
+        if not result or not result['xp_locked']:
+            return False
+        
+        # Check if lock expired
+        if result['xp_lock_until']:
+            lock_until = datetime.fromisoformat(result['xp_lock_until'])
+            if datetime.now() > lock_until:
+                # Auto-remove expired lock
+                await db.execute('UPDATE users SET xp_locked = 0, xp_lock_until = NULL WHERE user_id = ?', (user_id,))
+                return False
+        return True
+    
     async def add_xp(self, user_id: int, amount: int) -> int:
         """
         Add XP to a user (with multiplier applied) and return new total.
-        
-        Args:
-            user_id: Discord user ID
-            amount: Base amount of XP to add (multiplier applied automatically)
-            
-        Returns:
-            New total XP for the user
+        Returns 0 if user is XP locked.
         """
+        # Check XP lock
+        if await self.is_xp_locked(user_id):
+            return 0
+        
         # Get user's multiplier
         multiplier = await self.get_multiplier(user_id)
         final_xp = int(amount * multiplier)
