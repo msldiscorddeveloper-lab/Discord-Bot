@@ -318,72 +318,57 @@ class ModCog(commands.Cog, name="Moderation"):
         await self._log_to_channel(inter.guild, embed)
     
     # ─────────────────────────────────────────────────────────────────────
-    # Text Commands (Legacy Support)
+    # Additional Slash Commands
     # ─────────────────────────────────────────────────────────────────────
     
-    @commands.command()
-    @commands.has_permissions(kick_members=True)
-    async def kick(self, ctx: commands.Context, member: discord.Member, *, reason: str = None):
+    @app_commands.command(name="kick", description="Kick a member from the server")
+    @app_commands.default_permissions(kick_members=True)
+    @app_commands.describe(user="Member to kick", reason="Reason for kick")
+    async def kick(self, inter: discord.Interaction, user: discord.Member, reason: str = None):
         """Kick a member from the server."""
-        if member.top_role >= ctx.author.top_role:
-            return await ctx.reply("❌ Cannot kick someone with equal or higher role.")
+        if not await self._check_hierarchy(inter, user):
+            return
         
-        await self._notify_user(member, "kicked", reason, ctx.guild.name)
-        await member.kick(reason=reason)
-        await mod_service.log_action("kick", ctx.author.id, member.id, reason)
+        await self._notify_user(user, "kicked", reason, inter.guild.name)
+        await user.kick(reason=reason)
+        await mod_service.log_action("kick", inter.user.id, user.id, reason)
         
         embed = discord.Embed(title="👢 User Kicked", color=discord.Color.orange())
-        embed.add_field(name="User", value=member.mention, inline=True)
-        embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
+        embed.add_field(name="User", value=user.mention, inline=True)
+        embed.add_field(name="Moderator", value=inter.user.mention, inline=True)
         if reason:
             embed.add_field(name="Reason", value=reason, inline=False)
         
-        await ctx.reply(embed=embed)
+        await inter.response.send_message(embed=embed)
+        await self._log_to_channel(inter.guild, embed)
     
-    @commands.command()
-    @commands.has_permissions(ban_members=True)
-    async def unban(self, ctx: commands.Context, user_id: int, *, reason: str = None):
+    @app_commands.command(name="unban", description="Unban a user by their ID")
+    @app_commands.default_permissions(ban_members=True)
+    @app_commands.describe(user_id="User ID to unban", reason="Reason for unban")
+    async def unban(self, inter: discord.Interaction, user_id: str, reason: str = None):
         """Unban a user by their ID."""
         try:
-            user = await self.bot.fetch_user(user_id)
-            await ctx.guild.unban(user, reason=reason)
-            await mod_service.log_action("unban", ctx.author.id, user_id, reason)
-            await ctx.reply(f"✅ **{user}** has been unbanned.")
+            uid = int(user_id)
+            user = await self.bot.fetch_user(uid)
+            await inter.guild.unban(user, reason=reason)
+            await mod_service.log_action("unban", inter.user.id, uid, reason)
+            await inter.response.send_message(f"✅ **{user}** has been unbanned.")
+        except ValueError:
+            await inter.response.send_message("❌ Invalid user ID.", ephemeral=True)
         except discord.NotFound:
-            await ctx.reply("❌ User not found or not banned.")
+            await inter.response.send_message("❌ User not found or not banned.", ephemeral=True)
     
-    @commands.command()
-    @commands.has_permissions(moderate_members=True)
-    async def unmute(self, ctx: commands.Context, member: discord.Member, *, reason: str = None):
+    @app_commands.command(name="unmute", description="Remove timeout from a member")
+    @app_commands.default_permissions(moderate_members=True)
+    @app_commands.describe(user="Member to unmute", reason="Reason for unmute")
+    async def unmute(self, inter: discord.Interaction, user: discord.Member, reason: str = None):
         """Remove timeout from a member."""
-        if not member.is_timed_out():
-            return await ctx.reply("❌ This member is not muted.")
+        if not user.is_timed_out():
+            return await inter.response.send_message("❌ This member is not muted.", ephemeral=True)
         
-        await member.timeout(None, reason=reason)
-        await mod_service.log_action("unmute", ctx.author.id, member.id, reason)
-        await ctx.reply(f"🔊 **{member.display_name}** has been unmuted.")
-    
-    @commands.command()
-    @commands.has_permissions(moderate_members=True)
-    async def modlog(self, ctx: commands.Context, member: discord.Member):
-        """View a member's moderation history (alias for /history)."""
-        history = await mod_service.get_user_history(member.id, limit=10)
-        
-        embed = discord.Embed(
-            title=f"📋 Mod History: {member.display_name}",
-            color=discord.Color.dark_embed()
-        )
-        
-        if not history:
-            embed.description = "✨ Clean record!"
-        else:
-            lines = []
-            for entry in history:
-                icon = self._get_action_icon(entry['action_type'])
-                lines.append(f"{icon} **{entry['action_type'].upper()}** - <@{entry['moderator_id']}>\n└ {entry['reason'] or 'No reason'}")
-            embed.description = "\n\n".join(lines)
-        
-        await ctx.reply(embed=embed)
+        await user.timeout(None, reason=reason)
+        await mod_service.log_action("unmute", inter.user.id, user.id, reason)
+        await inter.response.send_message(f"🔊 **{user.display_name}** has been unmuted.")
 
 
 async def setup(bot: commands.Bot):

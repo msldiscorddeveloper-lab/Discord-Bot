@@ -18,9 +18,6 @@ if not DISCORD_TOKEN:
 # Database
 DATABASE_PATH = os.getenv("DATABASE_PATH", "levels.db")
 
-# Channel IDs
-BOT_CHANNEL_ID = int(os.getenv("BOT_CHANNEL_ID", "0"))
-BOOST_ANNOUNCE_CHANNEL_ID = int(os.getenv("BOOST_ANNOUNCE_CHANNEL_ID", "0"))
 
 # XP Settings
 XP_CONFIG = {
