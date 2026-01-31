@@ -42,10 +42,16 @@ async def on_ready():
     # Check for missing settings
     await check_missing_settings()
     
-    # Sync slash commands
+    # Sync slash commands to guild for instant update
     try:
-        synced = await bot.tree.sync()
-        logger.info(f'Synced {len(synced)} slash commands')
+        guild = bot.guilds[0] if bot.guilds else None
+        if guild:
+            bot.tree.copy_global_to(guild=guild)
+            synced = await bot.tree.sync(guild=guild)
+            logger.info(f'Synced {len(synced)} slash commands to {guild.name}')
+        else:
+            synced = await bot.tree.sync()
+            logger.info(f'Synced {len(synced)} slash commands globally')
     except Exception as e:
         logger.error(f'Failed to sync commands: {e}')
     
@@ -103,13 +109,11 @@ async def load_extensions():
             logger.error(f'Failed to load {cog}: {e}')
 
 
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def reload(ctx: commands.Context, cog_name: str = None):
-    """
-    Reload cogs. Usage: !reload [cog_name]
-    If no cog specified, reloads all cogs.
-    """
+@bot.tree.command(name="reload", description="Reload bot cogs (Admin only)")
+@discord.app_commands.default_permissions(administrator=True)
+@discord.app_commands.describe(cog="Cog to reload (leave empty for all)")
+async def reload(inter: discord.Interaction, cog: str = None):
+    """Reload cogs."""
     cog_mapping = {
         "xp": "cogs.leveling.xp_cog",
         "leveling": "cogs.leveling.xp_cog",
@@ -120,43 +124,41 @@ async def reload(ctx: commands.Context, cog_name: str = None):
         "setup": "cogs.setup.setup_cog",
     }
     
-    if cog_name:
-        # Reload specific cog
-        cog_path = cog_mapping.get(cog_name.lower())
+    if cog:
+        cog_path = cog_mapping.get(cog.lower())
         if not cog_path:
-            return await ctx.reply(f"❌ Unknown cog: `{cog_name}`")
+            return await inter.response.send_message(f"❌ Unknown cog: `{cog}`", ephemeral=True)
         
         try:
             await bot.reload_extension(cog_path)
-            await ctx.reply(f"✅ Reloaded `{cog_name}`")
+            await inter.response.send_message(f"✅ Reloaded `{cog}`", ephemeral=True)
             logger.info(f'Reloaded: {cog_path}')
         except Exception as e:
-            await ctx.reply(f"❌ Failed to reload: {e}")
+            await inter.response.send_message(f"❌ Failed to reload: {e}", ephemeral=True)
     else:
-        # Reload all cogs
         reloaded = []
         failed = []
+        unique_paths = list(dict.fromkeys(cog_mapping.values()))
         
-        for name, path in cog_mapping.items():
-            if path not in [cog_mapping[k] for k in list(cog_mapping.keys())[:list(cog_mapping.keys()).index(name)]]:
-                try:
-                    await bot.reload_extension(path)
-                    reloaded.append(name)
-                except Exception as e:
-                    failed.append(f"{name}: {e}")
+        for path in unique_paths:
+            try:
+                await bot.reload_extension(path)
+                reloaded.append(path.split('.')[-1])
+            except Exception as e:
+                failed.append(f"{path}: {e}")
         
         msg = f"✅ Reloaded: {', '.join(reloaded)}" if reloaded else ""
         if failed:
             msg += f"\n❌ Failed: {', '.join(failed)}"
         
-        await ctx.reply(msg or "No cogs to reload")
+        await inter.response.send_message(msg or "No cogs to reload", ephemeral=True)
 
 
-@bot.command()
-async def ping(ctx: commands.Context):
+@bot.tree.command(name="ping", description="Check bot latency")
+async def ping(inter: discord.Interaction):
     """Check bot latency."""
     latency = round(bot.latency * 1000)
-    await ctx.reply(f"🏓 Pong! Latency: `{latency}ms`")
+    await inter.response.send_message(f"🏓 Pong! Latency: `{latency}ms`")
 
 
 async def main():
@@ -164,6 +166,14 @@ async def main():
     async with bot:
         await load_extensions()
         await bot.start(DISCORD_TOKEN)
+
+
+async def shutdown():
+    """Graceful shutdown."""
+    logger.info('Shutting down...')
+    await db.disconnect()
+    await bot.close()
+    logger.info('Bot stopped')
 
 
 if __name__ == '__main__':
