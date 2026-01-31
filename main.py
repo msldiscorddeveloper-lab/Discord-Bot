@@ -39,6 +39,9 @@ async def on_ready():
     await db.connect()
     logger.info('Database connected')
     
+    # Check for missing settings
+    await check_missing_settings()
+    
     # Sync slash commands
     try:
         synced = await bot.tree.sync()
@@ -52,6 +55,32 @@ async def on_ready():
         channel = bot.get_channel(bot_channel_id)
         if channel:
             await channel.send("✅ Bot started successfully!")
+
+
+async def check_missing_settings():
+    """Log warnings for settings that haven't been configured."""
+    settings_to_check = {
+        # Channels
+        "bot_channel_id": "Bot Channel (!setup channel bot #channel)",
+        "boost_announce_channel_id": "Boost Announce (!setup channel announce #channel)",
+        "mod_log_channel_id": "Mod Log (!setup channel modlog #channel)",
+        # Roles
+        "server_booster_role_id": "Server Booster Role (!setup role server @role)",
+        "veteran_booster_role_id": "Veteran Booster Role (!setup role veteran @role)",
+        "mythic_booster_role_id": "Mythic Booster Role (!setup role mythic @role)",
+        "verified_role_id": "Verified Role (!setup role verified @role)",
+    }
+    
+    missing = []
+    for key, label in settings_to_check.items():
+        value = await settings_service.get_int(key)
+        if value == 0:
+            missing.append(label)
+    
+    if missing:
+        logger.warning("⚠️ Missing settings (use !setup to configure):")
+        for item in missing:
+            logger.warning(f"   - {item}")
 
 
 async def load_extensions():

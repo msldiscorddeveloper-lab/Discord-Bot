@@ -441,13 +441,13 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         await interaction.response.send_message("⚜️ Choose your exclusive emblem:", view=view, ephemeral=True)
     
     # ─────────────────────────────────────────────────────────────────────
-    # Text Commands
+    # Slash Commands - Perks & Info
     # ─────────────────────────────────────────────────────────────────────
     
-    @commands.command()
-    async def boostperks(self, ctx: commands.Context):
+    @app_commands.command(name="boostperks", description="Show your booster perks and progress")
+    async def boostperks(self, inter: discord.Interaction):
         """Show your booster perks and progress."""
-        member = ctx.author
+        member = inter.user
         tier_key, tier = self._get_member_tier(member)
         
         if not tier:
@@ -461,7 +461,7 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
                 value="• Up to 2x XP & Token Multiplier\n• 20% Shop Discount\n• Exclusive Colors & Emblems\n• Weekly Raffle Entries\n• Daily Mystery Pouches",
                 inline=False
             )
-            return await ctx.reply(embed=embed)
+            return await inter.response.send_message(embed=embed)
         
         perks = await xp_service.get_user_perks(member.id)
         badges = await self._get_badges(member.id)
@@ -490,16 +490,16 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
             embed.add_field(name="Next Tier", value=f"Mythic in {next_days} days", inline=False)
         
         embed.set_thumbnail(url=member.display_avatar.url)
-        await ctx.reply(embed=embed)
+        await inter.response.send_message(embed=embed)
     
-    @commands.command()
-    @commands.has_permissions(administrator=True)
-    async def boosters(self, ctx: commands.Context):
+    @app_commands.command(name="boosters", description="List all server boosters with their tier")
+    @app_commands.default_permissions(administrator=True)
+    async def boosters(self, inter: discord.Interaction):
         """List all boosters with their tier."""
-        boosters = [m for m in ctx.guild.members if m.premium_since]
+        boosters = [m for m in inter.guild.members if m.premium_since]
         
         if not boosters:
-            return await ctx.reply("No boosters yet! 💔")
+            return await inter.response.send_message("No boosters yet! 💔")
         
         boosters.sort(key=lambda m: m.premium_since)
         
@@ -517,7 +517,7 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
             lines.append(f"**{i}.** {emoji} {m.mention} — {days}d ({tier['xp_multiplier']}x)")
         
         embed.add_field(name="Members", value="\n".join(lines), inline=False)
-        await ctx.reply(embed=embed)
+        await inter.response.send_message(embed=embed)
 
 
 async def setup(bot: commands.Bot):
