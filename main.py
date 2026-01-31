@@ -163,29 +163,42 @@ async def ping(inter: discord.Interaction):
 
 async def main():
     """Main entry point."""
-    async with bot:
-        await load_extensions()
-        await bot.start(DISCORD_TOKEN)
+    await load_extensions()
+    await bot.start(DISCORD_TOKEN)
+
+
+async def shutdown():
+    """Graceful shutdown - close bot and database."""
+    logger.info('Shutting down gracefully...')
+    try:
+        await db.close()
+    except:
+        pass
+    if not bot.is_closed():
+        await bot.close()
+    logger.info('Bot stopped')
 
 
 if __name__ == '__main__':
-    import signal
-    import sys
-    
-    def signal_handler(sig, frame):
-        """Handle Ctrl+C gracefully."""
-        logger.info('Received shutdown signal, closing...')
-        # Schedule the bot close in the event loop
-        asyncio.get_event_loop().create_task(bot.close())
-        sys.exit(0)
-    
-    # Register signal handler for Windows
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     
     try:
-        asyncio.run(main())
+        loop.run_until_complete(main())
     except KeyboardInterrupt:
-        logger.info('Bot stopped by user')
-    except SystemExit:
-        pass
+        logger.info('Received Ctrl+C, shutting down...')
+    finally:
+        # Cleanup
+        loop.run_until_complete(shutdown())
+        
+        # Cancel all pending tasks
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        
+        # Wait for cancellation
+        if pending:
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        
+        loop.close()
+        logger.info('Shutdown complete')
