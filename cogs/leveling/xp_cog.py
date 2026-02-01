@@ -29,8 +29,9 @@ class XpCog(commands.Cog, name="Leveling"):
         self.message_reaction_xp = {}
         self.user_reacted_to_message = set()
         self.daily_reaction_cache = {}
-        
-        # Start background task
+    
+    async def cog_load(self):
+        """Called when cog is loaded - start background task."""
         self.batch_update_db.start()
     
     def cog_unload(self):
