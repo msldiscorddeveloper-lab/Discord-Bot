@@ -176,6 +176,10 @@ class ModCog(commands.Cog, name="Moderation"):
     
     @app_commands.command(name="warn", description="Issue a formal warning (applies 24h XP lock)")
     @app_commands.default_permissions(moderate_members=True)
+    @app_commands.describe(
+        user="The member to warn",
+        reason="Reason for the warning (required)"
+    )
     async def warn(self, inter: discord.Interaction, user: discord.Member, reason: str):
         """Warn user with 24h XP/Token lock."""
         # Log action
@@ -206,6 +210,11 @@ class ModCog(commands.Cog, name="Moderation"):
     
     @app_commands.command(name="mute", description="Mute a user (assigns Muted role)")
     @app_commands.default_permissions(moderate_members=True)
+    @app_commands.describe(
+        user="The member to mute",
+        duration="Duration (e.g., 1m, 1h, 1d, 1w)",
+        reason="Optional reason for the mute"
+    )
     async def mute(self, inter: discord.Interaction, user: discord.Member, duration: str, reason: str = None):
         """Mute user by assigning Muted role."""
         if not await self._check_hierarchy(inter, user):
@@ -260,6 +269,11 @@ class ModCog(commands.Cog, name="Moderation"):
     
     @app_commands.command(name="restrict", description="Restrict user (block images/embeds)")
     @app_commands.default_permissions(moderate_members=True)
+    @app_commands.describe(
+        user="The member to restrict",
+        duration="Duration (e.g., 1h, 1d, 1w)",
+        reason="Optional reason for the restriction"
+    )
     async def restrict(self, inter: discord.Interaction, user: discord.Member, duration: str, reason: str = None):
         """Restrict user - adds restricted role."""
         if not await self._check_hierarchy(inter, user):
@@ -313,6 +327,7 @@ class ModCog(commands.Cog, name="Moderation"):
     
     @app_commands.command(name="unrestrict", description="Remove restriction from user")
     @app_commands.default_permissions(moderate_members=True)
+    @app_commands.describe(user="The member to unrestrict")
     async def unrestrict(self, inter: discord.Interaction, user: discord.Member):
         """Remove restriction from user."""
         await db.execute('UPDATE users SET is_restricted = 0 WHERE user_id = %s', (user.id,))
@@ -335,6 +350,11 @@ class ModCog(commands.Cog, name="Moderation"):
         
     @app_commands.command(name="ban", description="Ban a user (perm wipes economy)")
     @app_commands.default_permissions(ban_members=True)
+    @app_commands.describe(
+        user="The member to ban",
+        duration="Duration or 'perm' (permanent, wipes economy data)",
+        reason="Optional reason for the ban"
+    )
     async def ban(self, inter: discord.Interaction, user: discord.Member, duration: str = "perm", reason: str = None):
         """Ban user. Duration 'perm' wipes economy data."""
         if not await self._check_hierarchy(inter, user):

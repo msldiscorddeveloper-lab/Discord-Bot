@@ -78,18 +78,71 @@ async def on_ready():
             await channel.send("✅ Bot started successfully!")
 
 
+@bot.event
+async def on_interaction(interaction: discord.Interaction):
+    """Log all slash command usage to the command log channel."""
+    # Only log application commands (not autocomplete, modals, etc.)
+    if interaction.type != discord.InteractionType.application_command:
+        return
+    
+    cmd_log_channel_id = await settings_service.get_int("command_log_channel_id")
+    if not cmd_log_channel_id:
+        return
+    
+    channel = bot.get_channel(cmd_log_channel_id)
+    if not channel:
+        return
+    
+    # Build the command string with arguments
+    command_name = interaction.data.get("name", "Unknown")
+    
+    # Extract arguments from the interaction data
+    args_list = []
+    if "options" in interaction.data:
+        options = interaction.data.get("options", [])
+        for opt in options:
+            # Handle subcommands
+            if opt.get("type") in [1, 2]:  # SUB_COMMAND or SUB_COMMAND_GROUP
+                command_name += f" {opt['name']}"
+                if "options" in opt:
+                    for sub_opt in opt["options"]:
+                        value = sub_opt.get('value', 'N/A')
+                        args_list.append(f"{sub_opt['name']}={value}")
+            else:
+                value = opt.get('value', 'N/A')
+                args_list.append(f"{opt['name']}={value}")
+    
+    args_str = " ".join(args_list) if args_list else ""
+    
+    # Create log embed
+    embed = discord.Embed(
+        title="📝 Command Used",
+        color=discord.Color.blurple(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.add_field(name="User", value=f"{interaction.user.mention} ({interaction.user})", inline=True)
+    embed.add_field(name="Channel", value=f"<#{interaction.channel_id}>", inline=True)
+    embed.add_field(name="Command", value=f"```/{command_name} {args_str}```" if args_str else f"```/{command_name}```", inline=False)
+    embed.set_footer(text=f"User ID: {interaction.user.id}")
+    
+    try:
+        await channel.send(embed=embed)
+    except Exception:
+        pass  # Silently fail if logging fails
+
+
 async def check_missing_settings():
     """Log warnings for settings that haven't been configured."""
     settings_to_check = {
         # Channels
-        "bot_channel_id": "Bot Channel (!setup channel bot #channel)",
-        "boost_announce_channel_id": "Boost Announce (!setup channel announce #channel)",
-        "mod_log_channel_id": "Mod Log (!setup channel modlog #channel)",
+        "bot_channel_id": "Bot Channel (/setup channel bot #channel)",
+        "boost_announce_channel_id": "Boost Announce (/setup channel announce #channel)",
+        "mod_log_channel_id": "Mod Log (/setup channel modlog #channel)",
+        "command_log_channel_id": "Command Log (/setup channel cmdlog #channel)",
         # Roles
-        "server_booster_role_id": "Server Booster Role (!setup role server @role)",
-        "veteran_booster_role_id": "Veteran Booster Role (!setup role veteran @role)",
-        "mythic_booster_role_id": "Mythic Booster Role (!setup role mythic @role)",
-        "verified_role_id": "Verified Role (!setup role verified @role)",
+        "server_booster_role_id": "Server Booster Role (/setup role server @role)",
+        "veteran_booster_role_id": "Veteran Booster Role (/setup role veteran @role)",
+        "mythic_booster_role_id": "Mythic Booster Role (/setup role mythic @role)",
     }
     
     missing = []
@@ -99,7 +152,7 @@ async def check_missing_settings():
             missing.append(label)
     
     if missing:
-        logger.warning("⚠️ Missing settings (use !setup to configure):")
+        logger.warning("⚠️ Missing settings (use /setup to configure):")
         for item in missing:
             logger.warning(f"   - {item}")
 
@@ -246,7 +299,7 @@ async def help_command(inter: discord.Interaction):
             "title": "Setup",
             "commands": [
                 ("**`/setup view`**", "View all current settings"),
-                ("**`/setup channel <type> <#channel>`**", "Set bot channels"),
+                ("**`/setup channel <type> <#channel>`**", "Set channels (bot, announce, modlog, cmdlog)"),
                 ("**`/setup role <type> <@role>`**", "Set roles (muted, restricted)"),
                 ("**`/boosters`**", "List all server boosters"),
                 ("**`/reload [cog]`**", "Hot-reload bot cogs"),

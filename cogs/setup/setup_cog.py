@@ -37,6 +37,7 @@ class SetupCog(commands.Cog, name="Setup"):
             ("Booster Chat", settings.get("booster_chat_channel_id", "0")),
             ("Booster Lounge VC", settings.get("booster_lounge_vc_id", "0")),
             ("Mod Log", settings.get("mod_log_channel_id", "0")),
+            ("Command Log", settings.get("command_log_channel_id", "0")),
         ]
         channel_text = "\n".join([
             f"**{name}:** <#{cid}>" if cid != "0" else f"**{name}:** Not set"
@@ -91,7 +92,7 @@ class SetupCog(commands.Cog, name="Setup"):
     async def setup_channel(
         self, 
         inter: discord.Interaction, 
-        setting: Literal["bot", "announce", "booster_chat", "modlog"],
+        setting: Literal["bot", "announce", "booster_chat", "modlog", "cmdlog"],
         channel: discord.TextChannel
     ):
         key_map = {
@@ -99,6 +100,7 @@ class SetupCog(commands.Cog, name="Setup"):
             "announce": "boost_announce_channel_id",
             "booster_chat": "booster_chat_channel_id",
             "modlog": "mod_log_channel_id",
+            "cmdlog": "command_log_channel_id",
         }
         await settings_service.set(key_map[setting], str(channel.id))
         await inter.response.send_message(f"✅ **{setting}** channel set to {channel.mention}", ephemeral=True)
