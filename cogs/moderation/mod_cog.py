@@ -232,9 +232,12 @@ class ModCog(commands.Cog, name="Moderation"):
         try:
             if muted_role not in user.roles:
                 await user.add_roles(muted_role, reason=f"Muted by {inter.user}: {reason}")
-        except discord.Forbidden:
+        except discord.Forbidden as e:
             return await inter.response.send_message(
-                "❌ **Missing Permissions.** Make sure the bot's role is above the Muted role.",
+                f"❌ **Missing Permissions.**\n"
+                f"Bot role position: {inter.guild.me.top_role.position}\n"
+                f"Muted role position: {muted_role.position}\n"
+                f"Error: {e}",
                 ephemeral=True
             )
         

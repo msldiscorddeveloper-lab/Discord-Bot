@@ -50,7 +50,6 @@ class SetupCog(commands.Cog, name="Setup"):
             ("Veteran Booster", settings.get("veteran_booster_role_id", "0")),
             ("Mythic Booster", settings.get("mythic_booster_role_id", "0")),
             ("Spotlight", settings.get("booster_spotlight_role_id", "0")),
-            ("Verified", settings.get("verified_role_id", "0")),
         ]
         role_text = "\n".join([
             f"**{name}:** <@&{rid}>" if rid != "0" else f"**{name}:** Not set"
