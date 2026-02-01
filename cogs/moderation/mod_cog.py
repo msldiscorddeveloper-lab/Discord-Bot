@@ -230,8 +230,10 @@ class ModCog(commands.Cog, name="Moderation"):
         
         # Apply Muted role
         try:
-            if muted_role not in user.roles:
-                await user.add_roles(muted_role, reason=f"Muted by {inter.user}: {reason}")
+            # Fetch member fresh to ensure we have full access
+            member = await inter.guild.fetch_member(user.id)
+            if muted_role not in member.roles:
+                await member.add_roles(muted_role, reason=f"Muted by {inter.user}: {reason}")
         except discord.Forbidden as e:
             return await inter.response.send_message(
                 f"❌ **Missing Permissions.**\n"
@@ -282,11 +284,16 @@ class ModCog(commands.Cog, name="Moderation"):
             return await inter.response.send_message("❌ Restricted role not found.", ephemeral=True)
         
         try:
-            if restricted_role not in user.roles:
-                await user.add_roles(restricted_role, reason=f"Restricted: {reason}")
-        except discord.Forbidden:
+            # Fetch member fresh to ensure we have full access
+            member = await inter.guild.fetch_member(user.id)
+            if restricted_role not in member.roles:
+                await member.add_roles(restricted_role, reason=f"Restricted: {reason}")
+        except discord.Forbidden as e:
             return await inter.response.send_message(
-                "❌ **Missing Permissions.** Make sure the bot's role is above the Restricted role.",
+                f"❌ **Missing Permissions.**\n"
+                f"Bot role position: {inter.guild.me.top_role.position}\n"
+                f"Restricted role position: {restricted_role.position}\n"
+                f"Error: {e}",
                 ephemeral=True
             )
         
