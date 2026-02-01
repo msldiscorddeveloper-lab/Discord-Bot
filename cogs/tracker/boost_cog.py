@@ -71,8 +71,12 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         days = (datetime.now() - member.premium_since.replace(tzinfo=None)).days
         return self._get_tier_for_months(days // 30)
     
-    async def _grant_tier_role(self, member: discord.Member, tier_key: str, tier: dict) -> bool:
-        """Grant tier role and remove other booster tier roles."""
+    async def _grant_tier_role(self, member: discord.Member, tier_key: str, tier: dict, max_retries: int = 2) -> bool:
+        """
+        Grant tier role and remove other booster tier roles.
+        Includes verification and retry logic for robustness.
+        """
+        import asyncio
         guild = member.guild
         role_ids = await self._get_tier_role_ids()
         target_role_id = role_ids.get(tier_key, 0)
@@ -84,25 +88,83 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         if not target_role:
             return False
         
-        try:
-            # Remove other tier roles
-            for key, rid in role_ids.items():
-                if rid and rid != target_role_id:
-                    role = guild.get_role(rid)
-                    if role and role in member.roles:
-                        await member.remove_roles(role)
-            
-            if target_role not in member.roles:
+        # Check hierarchy before attempting
+        if target_role.position >= guild.me.top_role.position:
+            print(f"[BoostTracker] Cannot grant {target_role.name}: role position too high")
+            return False
+        
+        for attempt in range(max_retries):
+            try:
+                # Fetch fresh member data
+                try:
+                    member = await guild.fetch_member(member.id)
+                except discord.NotFound:
+                    return False
+                
+                # Remove other tier roles first
+                for key, rid in role_ids.items():
+                    if rid and rid != target_role_id:
+                        role = guild.get_role(rid)
+                        if role and role in member.roles:
+                            try:
+                                await member.remove_roles(role, reason="Tier role update")
+                            except discord.Forbidden:
+                                pass  # Continue even if removal fails
+                
+                # Check if target role already assigned
+                if target_role in member.roles:
+                    return False  # Already has the role
+                
+                # Add the new tier role
                 await member.add_roles(target_role, reason=f"Booster: {tier['name']}")
-                return True
-            return False
-        except discord.Forbidden:
-            return False
+                
+                # Small delay for API propagation
+                await asyncio.sleep(0.5)
+                
+                # Re-fetch and verify
+                try:
+                    member = await guild.fetch_member(member.id)
+                except discord.NotFound:
+                    return False
+                
+                if target_role in member.roles:
+                    return True  # Success!
+                
+                # Retry if not applied
+                if attempt < max_retries - 1:
+                    continue
+                    
+                print(f"[BoostTracker] Failed to grant {target_role.name} to {member.display_name} after {max_retries} attempts")
+                return False
+                
+            except discord.Forbidden as e:
+                print(f"[BoostTracker] Permission error granting tier role: {e}")
+                return False
+            except discord.HTTPException as e:
+                if attempt < max_retries - 1:
+                    continue
+                print(f"[BoostTracker] HTTP error granting tier role: {e}")
+                return False
+        
+        return False
     
     async def _remove_all_booster_roles(self, member: discord.Member):
-        """Remove all booster-related roles."""
+        """
+        Remove all booster-related roles with robust error handling.
+        Continues even if individual role removals fail.
+        """
         guild = member.guild
         roles_to_remove = []
+        
+        # Fetch fresh member data
+        try:
+            member = await guild.fetch_member(member.id)
+        except discord.NotFound:
+            print(f"[BoostTracker] Member {member.id} not found during role cleanup")
+            return
+        except discord.HTTPException as e:
+            print(f"[BoostTracker] Failed to fetch member for role cleanup: {e}")
+            return
         
         # Tier roles
         role_ids = await self._get_tier_role_ids()
@@ -133,11 +195,23 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
             if spotlight_role and spotlight_role in member.roles:
                 roles_to_remove.append(spotlight_role)
         
+        # Remove roles with individual error handling
+        removed_count = 0
         for role in roles_to_remove:
             try:
-                await member.remove_roles(role)
-            except discord.Forbidden:
-                pass
+                # Check hierarchy before attempting
+                if role.position >= guild.me.top_role.position:
+                    print(f"[BoostTracker] Cannot remove {role.name}: role position too high")
+                    continue
+                await member.remove_roles(role, reason="Boost expired - role cleanup")
+                removed_count += 1
+            except discord.Forbidden as e:
+                print(f"[BoostTracker] Permission error removing {role.name}: {e}")
+            except discord.HTTPException as e:
+                print(f"[BoostTracker] HTTP error removing {role.name}: {e}")
+        
+        if roles_to_remove:
+            print(f"[BoostTracker] Removed {removed_count}/{len(roles_to_remove)} roles from {member.display_name}")
     
     async def _get_user_color_role(self, user_id: int) -> int | None:
         result = await db.fetch_one('SELECT color_role_id FROM users WHERE user_id = %s', (user_id,))
@@ -272,7 +346,9 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
     
     @tasks.loop(hours=168)  # Weekly
     async def weekly_spotlight(self):
-        """Select Booster of the Week from Mythic boosters."""
+        """Select Booster of the Week from Mythic boosters with robust role handling."""
+        import asyncio
+        
         if not self.bot.guilds:
             return
         
@@ -285,12 +361,20 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         if not spotlight_role:
             return
         
-        # Remove previous spotlight
+        # Check hierarchy before attempting
+        if spotlight_role.position >= guild.me.top_role.position:
+            print(f"[BoostTracker] Cannot manage spotlight role: position too high")
+            return
+        
+        # Remove previous spotlight with verification
         for member in spotlight_role.members:
             try:
-                await member.remove_roles(spotlight_role)
-            except discord.Forbidden:
-                pass
+                await member.remove_roles(spotlight_role, reason="Weekly spotlight rotation")
+                print(f"[BoostTracker] Removed spotlight from {member.display_name}")
+            except discord.Forbidden as e:
+                print(f"[BoostTracker] Failed to remove spotlight from {member.display_name}: {e}")
+            except discord.HTTPException as e:
+                print(f"[BoostTracker] HTTP error removing spotlight: {e}")
         
         # Find Mythic boosters
         mythic_members = []
@@ -303,8 +387,22 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         if mythic_members:
             import random
             winner = random.choice(mythic_members)
+            
             try:
+                # Fetch fresh member data
+                winner = await guild.fetch_member(winner.id)
+                
                 await winner.add_roles(spotlight_role, reason="Booster of the Week")
+                
+                # Verify role was applied
+                await asyncio.sleep(0.5)
+                winner = await guild.fetch_member(winner.id)
+                
+                if spotlight_role not in winner.roles:
+                    print(f"[BoostTracker] Failed to verify spotlight role on {winner.display_name}")
+                    return
+                
+                print(f"[BoostTracker] Spotlight role assigned to {winner.display_name}")
                 
                 channel_id = await self._get_announce_channel_id()
                 if channel_id:
@@ -317,8 +415,13 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
                         )
                         embed.set_thumbnail(url=winner.display_avatar.url)
                         await channel.send(embed=embed)
-            except discord.Forbidden:
-                pass
+                        
+            except discord.NotFound:
+                print(f"[BoostTracker] Winner left the server during spotlight assignment")
+            except discord.Forbidden as e:
+                print(f"[BoostTracker] Permission error assigning spotlight: {e}")
+            except discord.HTTPException as e:
+                print(f"[BoostTracker] HTTP error assigning spotlight: {e}")
     
     @weekly_spotlight.before_loop
     async def before_spotlight(self):
@@ -359,24 +462,53 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         select = discord.ui.Select(placeholder="Choose your color...", options=options[:25])
         
         async def callback(inter: discord.Interaction):
+            import asyncio
             role_id = int(select.values[0])
             role = inter.guild.get_role(role_id)
             
             if not role:
                 return await inter.response.send_message("❌ Role not found.", ephemeral=True)
             
-            # Remove old color role
-            old_color_id = await self._get_user_color_role(inter.user.id)
-            if old_color_id:
-                old_role = inter.guild.get_role(old_color_id)
-                if old_role and old_role in inter.user.roles:
-                    await inter.user.remove_roles(old_role)
+            # Check hierarchy
+            if role.position >= inter.guild.me.top_role.position:
+                return await inter.response.send_message(
+                    f"❌ Cannot assign **{role.name}**: role position is too high in the hierarchy.",
+                    ephemeral=True
+                )
             
-            # Add new color role
-            await inter.user.add_roles(role)
-            await db.execute('UPDATE users SET color_role_id = %s WHERE user_id = %s', (role_id, inter.user.id))
-            
-            await inter.response.send_message(f"✅ Your color is now **{role.name}**!", ephemeral=True)
+            try:
+                # Remove old color role
+                old_color_id = await self._get_user_color_role(inter.user.id)
+                if old_color_id:
+                    old_role = inter.guild.get_role(old_color_id)
+                    if old_role and old_role in inter.user.roles:
+                        try:
+                            await inter.user.remove_roles(old_role, reason="Changing booster color")
+                        except discord.Forbidden:
+                            pass  # Continue even if old role removal fails
+                
+                # Add new color role
+                await inter.user.add_roles(role, reason="Booster color selection")
+                
+                # Verify role was applied
+                await asyncio.sleep(0.5)
+                member = await inter.guild.fetch_member(inter.user.id)
+                
+                if role not in member.roles:
+                    return await inter.response.send_message(
+                        f"❌ Failed to apply color role. Please contact an admin.",
+                        ephemeral=True
+                    )
+                
+                # Update DB only after confirmed success
+                await db.execute('UPDATE users SET color_role_id = %s WHERE user_id = %s', (role_id, inter.user.id))
+                
+                await inter.response.send_message(f"✅ Your color is now **{role.name}**!", ephemeral=True)
+                
+            except discord.Forbidden as e:
+                await inter.response.send_message(f"❌ Permission error: {e}", ephemeral=True)
+            except discord.HTTPException as e:
+                await inter.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
         
         select.callback = callback
         view = discord.ui.View()
@@ -416,23 +548,53 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         select = discord.ui.Select(placeholder="Choose your emblem...", options=options)
         
         async def callback(inter: discord.Interaction):
+            import asyncio
             role_id = int(select.values[0])
             role = inter.guild.get_role(role_id)
             
             if not role:
                 return await inter.response.send_message("❌ Role not found.", ephemeral=True)
             
-            # Remove old emblem
-            old_emblem_id = await self._get_user_emblem_role(inter.user.id)
-            if old_emblem_id:
-                old_role = inter.guild.get_role(old_emblem_id)
-                if old_role and old_role in inter.user.roles:
-                    await inter.user.remove_roles(old_role)
+            # Check hierarchy
+            if role.position >= inter.guild.me.top_role.position:
+                return await inter.response.send_message(
+                    f"❌ Cannot assign **{role.name}**: role position is too high in the hierarchy.",
+                    ephemeral=True
+                )
             
-            await inter.user.add_roles(role)
-            await db.execute('UPDATE users SET emblem_role_id = %s WHERE user_id = %s', (role_id, inter.user.id))
-            
-            await inter.response.send_message(f"✅ Your emblem is now **{role.name}**!", ephemeral=True)
+            try:
+                # Remove old emblem
+                old_emblem_id = await self._get_user_emblem_role(inter.user.id)
+                if old_emblem_id:
+                    old_role = inter.guild.get_role(old_emblem_id)
+                    if old_role and old_role in inter.user.roles:
+                        try:
+                            await inter.user.remove_roles(old_role, reason="Changing booster emblem")
+                        except discord.Forbidden:
+                            pass  # Continue even if old role removal fails
+                
+                # Add new emblem role
+                await inter.user.add_roles(role, reason="Booster emblem selection")
+                
+                # Verify role was applied
+                await asyncio.sleep(0.5)
+                member = await inter.guild.fetch_member(inter.user.id)
+                
+                if role not in member.roles:
+                    return await inter.response.send_message(
+                        f"❌ Failed to apply emblem role. Please contact an admin.",
+                        ephemeral=True
+                    )
+                
+                # Update DB only after confirmed success
+                await db.execute('UPDATE users SET emblem_role_id = %s WHERE user_id = %s', (role_id, inter.user.id))
+                
+                await inter.response.send_message(f"✅ Your emblem is now **{role.name}**!", ephemeral=True)
+                
+            except discord.Forbidden as e:
+                await inter.response.send_message(f"❌ Permission error: {e}", ephemeral=True)
+            except discord.HTTPException as e:
+                await inter.response.send_message(f"❌ Discord error: {e}", ephemeral=True)
         
         select.callback = callback
         view = discord.ui.View()

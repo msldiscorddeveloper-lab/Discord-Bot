@@ -106,6 +106,169 @@ class ModCog(commands.Cog, name="Moderation"):
             return False
         return True
     
+    async def _add_role_with_verification(
+        self, 
+        guild: discord.Guild, 
+        user_id: int, 
+        role: discord.Role, 
+        reason: str = None,
+        max_retries: int = 2
+    ) -> tuple[bool, str]:
+        """
+        Add a role to a member with verification.
+        Returns (success: bool, error_message: str or None)
+        
+        Handles:
+        - Member not found in guild
+        - Role already assigned
+        - Permission errors
+        - Verification that role was actually applied
+        - Retry logic for transient failures
+        """
+        for attempt in range(max_retries):
+            try:
+                # Fetch fresh member data
+                try:
+                    member = await guild.fetch_member(user_id)
+                except discord.NotFound:
+                    return False, "Member not found in the server."
+                except discord.HTTPException as e:
+                    return False, f"Failed to fetch member: {e}"
+                
+                # Check if role already assigned
+                if role in member.roles:
+                    return False, f"{member.mention} already has this role."
+                
+                # Check hierarchy before attempting
+                if role.position >= guild.me.top_role.position:
+                    return False, (
+                        f"Cannot assign role: **{role.name}** (position {role.position}) "
+                        f"is at or above my highest role (position {guild.me.top_role.position})."
+                    )
+                
+                # Attempt to add the role
+                await member.add_roles(role, reason=reason)
+                
+                # Small delay to allow Discord API to propagate
+                import asyncio
+                await asyncio.sleep(0.5)
+                
+                # Re-fetch and verify
+                try:
+                    member = await guild.fetch_member(user_id)
+                except discord.NotFound:
+                    return False, "Member left the server during role assignment."
+                
+                if role in member.roles:
+                    return True, None  # Success!
+                
+                # Role not applied, retry if attempts remain
+                if attempt < max_retries - 1:
+                    continue
+                
+                return False, (
+                    f"Role assignment completed but role was not applied.\n"
+                    f"• Bot role position: {guild.me.top_role.position}\n"
+                    f"• Target role position: {role.position}\n"
+                    f"Please ensure the bot's role is above the target role."
+                )
+                
+            except discord.Forbidden as e:
+                return False, (
+                    f"Missing Permissions.\n"
+                    f"• Bot role position: {guild.me.top_role.position}\n"
+                    f"• Target role position: {role.position}\n"
+                    f"• Error: {e}"
+                )
+            except discord.HTTPException as e:
+                if attempt < max_retries - 1:
+                    continue
+                return False, f"Discord API error: {e}"
+        
+        return False, "Failed after multiple attempts."
+    
+    async def _remove_role_with_verification(
+        self,
+        guild: discord.Guild,
+        user_id: int,
+        role: discord.Role,
+        reason: str = None,
+        max_retries: int = 2
+    ) -> tuple[bool, str]:
+        """
+        Remove a role from a member with verification.
+        Returns (success: bool, error_message: str or None)
+        
+        Handles:
+        - Member not found in guild
+        - Role not currently assigned
+        - Permission errors
+        - Verification that role was actually removed
+        - Retry logic for transient failures
+        """
+        for attempt in range(max_retries):
+            try:
+                # Fetch fresh member data
+                try:
+                    member = await guild.fetch_member(user_id)
+                except discord.NotFound:
+                    return False, "Member not found in the server."
+                except discord.HTTPException as e:
+                    return False, f"Failed to fetch member: {e}"
+                
+                # Check if role is assigned
+                if role not in member.roles:
+                    return False, f"{member.mention} doesn't have this role."
+                
+                # Check hierarchy before attempting
+                if role.position >= guild.me.top_role.position:
+                    return False, (
+                        f"Cannot remove role: **{role.name}** (position {role.position}) "
+                        f"is at or above my highest role (position {guild.me.top_role.position})."
+                    )
+                
+                # Attempt to remove the role
+                await member.remove_roles(role, reason=reason)
+                
+                # Small delay to allow Discord API to propagate
+                import asyncio
+                await asyncio.sleep(0.5)
+                
+                # Re-fetch and verify
+                try:
+                    member = await guild.fetch_member(user_id)
+                except discord.NotFound:
+                    # Member left, but role removal was likely successful
+                    return True, None
+                
+                if role not in member.roles:
+                    return True, None  # Success!
+                
+                # Role still present, retry if attempts remain
+                if attempt < max_retries - 1:
+                    continue
+                
+                return False, (
+                    f"Role removal completed but role is still present.\n"
+                    f"• Bot role position: {guild.me.top_role.position}\n"
+                    f"• Target role position: {role.position}\n"
+                    f"Please ensure the bot's role is above the target role."
+                )
+                
+            except discord.Forbidden as e:
+                return False, (
+                    f"Missing Permissions.\n"
+                    f"• Bot role position: {guild.me.top_role.position}\n"
+                    f"• Target role position: {role.position}\n"
+                    f"• Error: {e}"
+                )
+            except discord.HTTPException as e:
+                if attempt < max_retries - 1:
+                    continue
+                return False, f"Discord API error: {e}"
+        
+        return False, "Failed after multiple attempts."
+    
     async def _apply_xp_lock(self, user_id: int, hours: int = 24):
         """Apply XP/Token lock to user."""
         lock_until = datetime.now() + timedelta(hours=hours)
@@ -237,20 +400,16 @@ class ModCog(commands.Cog, name="Moderation"):
         if not muted_role:
             return await inter.response.send_message("❌ Muted role not found.", ephemeral=True)
         
-        # Apply Muted role
-        try:
-            # Fetch member fresh to ensure we have full access
-            member = await inter.guild.fetch_member(user.id)
-            if muted_role not in member.roles:
-                await member.add_roles(muted_role, reason=f"Muted by {inter.user}: {reason}")
-        except discord.Forbidden as e:
-            return await inter.response.send_message(
-                f"❌ **Missing Permissions.**\n"
-                f"Bot role position: {inter.guild.me.top_role.position}\n"
-                f"Muted role position: {muted_role.position}\n"
-                f"Error: {e}",
-                ephemeral=True
-            )
+        # Apply Muted role with verification
+        success, error = await self._add_role_with_verification(
+            guild=inter.guild,
+            user_id=user.id,
+            role=muted_role,
+            reason=f"Muted by {inter.user}: {reason}"
+        )
+        
+        if not success:
+            return await inter.response.send_message(f"❌ {error}", ephemeral=True)
         
         # DM and log
         await self._notify_user(user, f"muted for {duration}", reason, inter.guild.name)
@@ -297,19 +456,18 @@ class ModCog(commands.Cog, name="Moderation"):
         if not restricted_role:
             return await inter.response.send_message("❌ Restricted role not found.", ephemeral=True)
         
-        try:
-            # Fetch member fresh to ensure we have full access
-            member = await inter.guild.fetch_member(user.id)
-            if restricted_role not in member.roles:
-                await member.add_roles(restricted_role, reason=f"Restricted: {reason}")
-        except discord.Forbidden as e:
-            return await inter.response.send_message(
-                f"❌ **Missing Permissions.**\n"
-                f"Bot role position: {inter.guild.me.top_role.position}\n"
-                f"Restricted role position: {restricted_role.position}\n"
-                f"Error: {e}",
-                ephemeral=True
-            )
+        # Apply Restricted role with verification
+        success, error = await self._add_role_with_verification(
+            guild=inter.guild,
+            user_id=user.id,
+            role=restricted_role,
+            reason=f"Restricted by {inter.user}: {reason}"
+        )
+        
+        if not success:
+            # Rollback DB change on failure
+            await db.execute('UPDATE users SET is_restricted = 0 WHERE user_id = %s', (user.id,))
+            return await inter.response.send_message(f"❌ {error}", ephemeral=True)
         
         await mod_service.log_action("restrict", inter.user.id, user.id, f"{duration}: {reason or 'No reason'}")
         await self._notify_user(user, "restricted", reason, inter.guild.name)
@@ -330,14 +488,27 @@ class ModCog(commands.Cog, name="Moderation"):
     @app_commands.describe(user="The member to unrestrict")
     async def unrestrict(self, inter: discord.Interaction, user: discord.Member):
         """Remove restriction from user."""
-        await db.execute('UPDATE users SET is_restricted = 0 WHERE user_id = %s', (user.id,))
-        
-        # Remove Restricted role
+        # Remove Restricted role with verification
         restricted_role_id = await settings_service.get_int("restricted_role_id")
-        if restricted_role_id:
-            restricted_role = inter.guild.get_role(restricted_role_id)
-            if restricted_role and restricted_role in user.roles:
-                await user.remove_roles(restricted_role, reason="Unrestricted")
+        if not restricted_role_id:
+            return await inter.response.send_message("❌ Restricted role not configured.", ephemeral=True)
+        
+        restricted_role = inter.guild.get_role(restricted_role_id)
+        if not restricted_role:
+            return await inter.response.send_message("❌ Restricted role not found.", ephemeral=True)
+        
+        success, error = await self._remove_role_with_verification(
+            guild=inter.guild,
+            user_id=user.id,
+            role=restricted_role,
+            reason=f"Unrestricted by {inter.user}"
+        )
+        
+        if not success:
+            return await inter.response.send_message(f"❌ {error}", ephemeral=True)
+        
+        # Update DB after successful role removal
+        await db.execute('UPDATE users SET is_restricted = 0 WHERE user_id = %s', (user.id,))
         
         await mod_service.log_action("unrestrict", inter.user.id, user.id, None)
         
@@ -441,10 +612,16 @@ class ModCog(commands.Cog, name="Moderation"):
         if not muted_role:
             return await inter.response.send_message("❌ Muted role not found.", ephemeral=True)
         
-        if muted_role not in user.roles:
-            return await inter.response.send_message("❌ This member is not muted.", ephemeral=True)
+        # Remove Muted role with verification
+        success, error = await self._remove_role_with_verification(
+            guild=inter.guild,
+            user_id=user.id,
+            role=muted_role,
+            reason=f"Unmuted by {inter.user}: {reason}"
+        )
         
-        await user.remove_roles(muted_role, reason=f"Unmuted by {inter.user}: {reason}")
+        if not success:
+            return await inter.response.send_message(f"❌ {error}", ephemeral=True)
         await mod_service.log_action("unmute", inter.user.id, user.id, reason)
         
         embed = discord.Embed(title="🔊 User Unmuted", color=discord.Color.green())
