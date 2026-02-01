@@ -379,6 +379,127 @@ class ModCog(commands.Cog, name="Moderation"):
         await inter.response.send_message(embed=embed)
         await self._log_to_channel(inter.guild, embed)
     
+    # ─────────────────────────────────────────────────────────────────────
+    # DIAGNOSTIC COMMAND - Remove after debugging
+    # ─────────────────────────────────────────────────────────────────────
+    
+    @app_commands.command(name="testrole", description="[DEBUG] Test role assignment with detailed checks")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        user="The member to assign the role to",
+        role="The role to assign"
+    )
+    async def testrole(self, inter: discord.Interaction, user: discord.Member, role: discord.Role):
+        """Diagnostic command to test role assignment with granular checks."""
+        await inter.response.defer(ephemeral=True)
+        
+        guild = inter.guild
+        bot_member = guild.me
+        
+        # ─────────────────────────────────────────────────────────────────
+        # Gather all diagnostic info
+        # ─────────────────────────────────────────────────────────────────
+        
+        checks = []
+        
+        # 1. Bot's role info
+        bot_roles = [r.name for r in bot_member.roles if r.name != "@everyone"]
+        checks.append(f"**Bot's roles:** {', '.join(bot_roles) or 'None'}")
+        checks.append(f"**Bot's top role:** {bot_member.top_role.name} (position {bot_member.top_role.position})")
+        
+        # 2. Target role info
+        checks.append(f"**Target role:** {role.name} (position {role.position})")
+        checks.append(f"**Role managed:** {role.managed}")
+        checks.append(f"**Role is bot role:** {role.is_bot_managed()}")
+        checks.append(f"**Role is integration:** {role.is_integration()}")
+        checks.append(f"**Role is premium:** {role.is_premium_subscriber()}")
+        
+        # 3. Target user info
+        checks.append(f"**Target user:** {user.display_name}")
+        checks.append(f"**User's top role:** {user.top_role.name} (position {user.top_role.position})")
+        checks.append(f"**User is owner:** {user.id == guild.owner_id}")
+        checks.append(f"**User already has role:** {role in user.roles}")
+        
+        # 4. Bot permissions (detailed)
+        perms = bot_member.guild_permissions
+        checks.append(f"**Bot permissions:**")
+        checks.append(f"  • Administrator: {perms.administrator}")
+        checks.append(f"  • Manage Roles: {perms.manage_roles}")
+        checks.append(f"  • Moderate Members: {perms.moderate_members}")
+        checks.append(f"  • Manage Guild: {perms.manage_guild}")
+        checks.append(f"  • Raw value: {perms.value}")
+        
+        # 5. Hierarchy checks
+        can_manage = bot_member.top_role.position > role.position
+        checks.append(f"**Hierarchy check (bot > role):** {'✅ PASS' if can_manage else '❌ FAIL'}")
+        
+        can_target = bot_member.top_role.position > user.top_role.position
+        checks.append(f"**Hierarchy check (bot > user):** {'✅ PASS' if can_target else '❌ FAIL'}")
+        
+        # 6. Bot's role details
+        checks.append(f"\n**Bot role permissions breakdown:**")
+        for r in bot_member.roles:
+            if r.name == "@everyone":
+                continue
+            checks.append(f"  • {r.name} (pos {r.position}): Admin={r.permissions.administrator}, ManageRoles={r.permissions.manage_roles}")
+        
+        # ─────────────────────────────────────────────────────────────────
+        # Attempt the role assignment
+        # ─────────────────────────────────────────────────────────────────
+        
+        checks.append(f"\n**Attempting role assignment...**")
+        
+        if role in user.roles:
+            checks.append(f"⚠️ User already has role, skipping add.")
+            result = "SKIPPED"
+        else:
+            try:
+                await user.add_roles(role, reason=f"Test by {inter.user}")
+                
+                # Verify
+                import asyncio
+                await asyncio.sleep(0.5)
+                refreshed = await guild.fetch_member(user.id)
+                
+                if role in refreshed.roles:
+                    checks.append(f"✅ **SUCCESS!** Role was assigned.")
+                    result = "SUCCESS"
+                    # Remove the role since this was just a test
+                    await refreshed.remove_roles(role, reason="Test cleanup")
+                    checks.append(f"🧹 Cleaned up test role.")
+                else:
+                    checks.append(f"⚠️ No error thrown but role not found on user.")
+                    result = "VERIFICATION_FAILED"
+                    
+            except discord.Forbidden as e:
+                checks.append(f"❌ **FORBIDDEN:** {e}")
+                checks.append(f"   Error code: {e.code}")
+                checks.append(f"   Error text: {e.text}")
+                result = "FORBIDDEN"
+            except discord.HTTPException as e:
+                checks.append(f"❌ **HTTP ERROR:** {e}")
+                checks.append(f"   Status: {e.status}")
+                checks.append(f"   Code: {e.code}")
+                result = "HTTP_ERROR"
+            except Exception as e:
+                checks.append(f"❌ **ERROR:** {type(e).__name__}: {e}")
+                result = "ERROR"
+        
+        # ─────────────────────────────────────────────────────────────────
+        # Send results
+        # ─────────────────────────────────────────────────────────────────
+        
+        # Split into multiple embeds if needed
+        output = "\n".join(checks)
+        
+        embed = discord.Embed(
+            title=f"🔧 Role Test: {result}",
+            description=output[:4000],  # Discord limit
+            color=discord.Color.green() if result == "SUCCESS" else discord.Color.red()
+        )
+        
+        await inter.followup.send(embed=embed, ephemeral=True)
+    
     @app_commands.command(name="mute", description="Mute a user (assigns Muted role)")
     @app_commands.default_permissions(moderate_members=True)
     @app_commands.describe(
