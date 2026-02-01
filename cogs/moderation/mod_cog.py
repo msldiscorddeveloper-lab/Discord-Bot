@@ -184,13 +184,6 @@ class ModCog(commands.Cog, name="Moderation"):
         # Apply 24h XP lock
         await self._apply_xp_lock(user.id, 24)
         
-        # Apply Warned role if configured
-        warned_role_id = await settings_service.get_int("warned_role_id")
-        if warned_role_id:
-            warned_role = inter.guild.get_role(warned_role_id)
-            if warned_role and warned_role not in user.roles:
-                await user.add_roles(warned_role, reason=f"Warned: {reason}")
-        
         # DM user
         dm_sent = await self._notify_user(user, "warned", reason, inter.guild.name)
         
@@ -211,22 +204,42 @@ class ModCog(commands.Cog, name="Moderation"):
         await inter.response.send_message(embed=embed)
         await self._log_to_channel(inter.guild, embed)
     
-    @app_commands.command(name="mute", description="Timeout a user")
+    @app_commands.command(name="mute", description="Mute a user (assigns Muted role)")
     @app_commands.default_permissions(moderate_members=True)
     async def mute(self, inter: discord.Interaction, user: discord.Member, duration: str, reason: str = None):
-        """Mute user using Discord timeout."""
+        """Mute user by assigning Muted role."""
         if not await self._check_hierarchy(inter, user):
             return
         
-        timeout_duration = self._parse_duration(duration)
-        if not timeout_duration:
+        # Validate duration format (for logging purposes)
+        parsed = self._parse_duration(duration)
+        if not parsed:
             return await inter.response.send_message("❌ Invalid duration. Use: `1m`, `1h`, `1d`, `1w`", ephemeral=True)
         
-        if timeout_duration.days > 28:
-            return await inter.response.send_message("❌ Max timeout is 28 days.", ephemeral=True)
+        # Get Muted role
+        muted_role_id = await settings_service.get_int("muted_role_id")
+        if not muted_role_id:
+            return await inter.response.send_message(
+                "❌ Muted role not configured. Use `/setup role muted @Muted`",
+                ephemeral=True
+            )
         
+        muted_role = inter.guild.get_role(muted_role_id)
+        if not muted_role:
+            return await inter.response.send_message("❌ Muted role not found.", ephemeral=True)
+        
+        # Apply Muted role
+        try:
+            if muted_role not in user.roles:
+                await user.add_roles(muted_role, reason=f"Muted by {inter.user}: {reason}")
+        except discord.Forbidden:
+            return await inter.response.send_message(
+                "❌ **Missing Permissions.** Make sure the bot's role is above the Muted role.",
+                ephemeral=True
+            )
+        
+        # DM and log
         await self._notify_user(user, f"muted for {duration}", reason, inter.guild.name)
-        await user.timeout(timeout_duration, reason=reason)
         await mod_service.log_action("mute", inter.user.id, user.id, f"{duration}: {reason or 'No reason'}")
         
         embed = discord.Embed(title="🔇 User Muted", color=discord.Color.red())
@@ -235,14 +248,15 @@ class ModCog(commands.Cog, name="Moderation"):
         embed.add_field(name="Moderator", value=inter.user.mention, inline=True)
         if reason:
             embed.add_field(name="Reason", value=reason, inline=False)
+        embed.set_footer(text="Role-based mute applied")
         
         await inter.response.send_message(embed=embed)
         await self._log_to_channel(inter.guild, embed)
     
-    @app_commands.command(name="restrict", description="Restrict user (remove verified, block images)")
+    @app_commands.command(name="restrict", description="Restrict user (block images/embeds)")
     @app_commands.default_permissions(moderate_members=True)
     async def restrict(self, inter: discord.Interaction, user: discord.Member, duration: str, reason: str = None):
-        """Restrict user - removes verified role, adds restricted role."""
+        """Restrict user - adds restricted role."""
         if not await self._check_hierarchy(inter, user):
             return
         
@@ -252,19 +266,26 @@ class ModCog(commands.Cog, name="Moderation"):
             ON DUPLICATE KEY UPDATE is_restricted = 1
         ''', (user.id,))
         
-        # Remove verified role if configured
-        verified_role_id = await settings_service.get_int("verified_role_id")
-        if verified_role_id:
-            verified_role = inter.guild.get_role(verified_role_id)
-            if verified_role and verified_role in user.roles:
-                await user.remove_roles(verified_role, reason="Restricted")
-        
-        # Add Restricted role if configured (blocks Attach Files & Embed Links)
+        # Add Restricted role (blocks Attach Files & Embed Links)
         restricted_role_id = await settings_service.get_int("restricted_role_id")
-        if restricted_role_id:
-            restricted_role = inter.guild.get_role(restricted_role_id)
-            if restricted_role and restricted_role not in user.roles:
+        if not restricted_role_id:
+            return await inter.response.send_message(
+                "❌ Restricted role not configured. Use `/setup role restricted @Restricted`",
+                ephemeral=True
+            )
+        
+        restricted_role = inter.guild.get_role(restricted_role_id)
+        if not restricted_role:
+            return await inter.response.send_message("❌ Restricted role not found.", ephemeral=True)
+        
+        try:
+            if restricted_role not in user.roles:
                 await user.add_roles(restricted_role, reason=f"Restricted: {reason}")
+        except discord.Forbidden:
+            return await inter.response.send_message(
+                "❌ **Missing Permissions.** Make sure the bot's role is above the Restricted role.",
+                ephemeral=True
+            )
         
         await mod_service.log_action("restrict", inter.user.id, user.id, f"{duration}: {reason or 'No reason'}")
         await self._notify_user(user, "restricted", reason, inter.guild.name)
@@ -273,7 +294,7 @@ class ModCog(commands.Cog, name="Moderation"):
         embed.add_field(name="User", value=user.mention, inline=True)
         embed.add_field(name="Duration", value=duration, inline=True)
         embed.add_field(name="Moderator", value=inter.user.mention, inline=True)
-        embed.add_field(name="Effects", value="• Verified status removed\n• Restricted role applied\n• Cannot send images/embeds", inline=False)
+        embed.add_field(name="Effects", value="• Restricted role applied\n• Cannot send images/embeds", inline=False)
         if reason:
             embed.add_field(name="Reason", value=reason, inline=False)
         
@@ -285,13 +306,6 @@ class ModCog(commands.Cog, name="Moderation"):
     async def unrestrict(self, inter: discord.Interaction, user: discord.Member):
         """Remove restriction from user."""
         await db.execute('UPDATE users SET is_restricted = 0 WHERE user_id = %s', (user.id,))
-        
-        # Restore verified role
-        verified_role_id = await settings_service.get_int("verified_role_id")
-        if verified_role_id:
-            verified_role = inter.guild.get_role(verified_role_id)
-            if verified_role:
-                await user.add_roles(verified_role, reason="Unrestricted")
         
         # Remove Restricted role
         restricted_role_id = await settings_service.get_int("restricted_role_id")
@@ -384,17 +398,33 @@ class ModCog(commands.Cog, name="Moderation"):
         except discord.NotFound:
             await inter.response.send_message("❌ User not found or not banned.", ephemeral=True)
     
-    @app_commands.command(name="unmute", description="Remove timeout from a member")
+    @app_commands.command(name="unmute", description="Remove Muted role from a member")
     @app_commands.default_permissions(moderate_members=True)
     @app_commands.describe(user="Member to unmute", reason="Reason for unmute")
     async def unmute(self, inter: discord.Interaction, user: discord.Member, reason: str = None):
-        """Remove timeout from a member."""
-        if not user.is_timed_out():
+        """Remove Muted role from a member."""
+        muted_role_id = await settings_service.get_int("muted_role_id")
+        if not muted_role_id:
+            return await inter.response.send_message("❌ Muted role not configured.", ephemeral=True)
+        
+        muted_role = inter.guild.get_role(muted_role_id)
+        if not muted_role:
+            return await inter.response.send_message("❌ Muted role not found.", ephemeral=True)
+        
+        if muted_role not in user.roles:
             return await inter.response.send_message("❌ This member is not muted.", ephemeral=True)
         
-        await user.timeout(None, reason=reason)
+        await user.remove_roles(muted_role, reason=f"Unmuted by {inter.user}: {reason}")
         await mod_service.log_action("unmute", inter.user.id, user.id, reason)
-        await inter.response.send_message(f"🔊 **{user.display_name}** has been unmuted.")
+        
+        embed = discord.Embed(title="🔊 User Unmuted", color=discord.Color.green())
+        embed.add_field(name="User", value=user.mention, inline=True)
+        embed.add_field(name="Moderator", value=inter.user.mention, inline=True)
+        if reason:
+            embed.add_field(name="Reason", value=reason, inline=False)
+        
+        await inter.response.send_message(embed=embed)
+        await self._log_to_channel(inter.guild, embed)
 
 
 async def setup(bot: commands.Bot):

@@ -60,7 +60,7 @@ class SetupCog(commands.Cog, name="Setup"):
         
         # Moderation Roles
         mod_roles = [
-            ("Warned", settings.get("warned_role_id", "0")),
+            ("Muted", settings.get("muted_role_id", "0")),
             ("Restricted", settings.get("restricted_role_id", "0")),
         ]
         mod_role_text = "\n".join([
@@ -121,7 +121,7 @@ class SetupCog(commands.Cog, name="Setup"):
     async def setup_role(
         self, 
         inter: discord.Interaction, 
-        setting: Literal["server", "veteran", "mythic", "spotlight", "verified", "warned", "restricted"],
+        setting: Literal["server", "veteran", "mythic", "spotlight", "muted", "restricted"],
         role: discord.Role
     ):
         key_map = {
@@ -129,8 +129,7 @@ class SetupCog(commands.Cog, name="Setup"):
             "veteran": "veteran_booster_role_id",
             "mythic": "mythic_booster_role_id",
             "spotlight": "booster_spotlight_role_id",
-            "verified": "verified_role_id",
-            "warned": "warned_role_id",
+            "muted": "muted_role_id",
             "restricted": "restricted_role_id",
         }
         await settings_service.set(key_map[setting], str(role.id))

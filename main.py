@@ -232,7 +232,8 @@ async def help_command(inter: discord.Interaction):
             "title": "Moderation",
             "commands": [
                 ("**`/warn <user> <reason>`**", "Warning + 24h XP lock"),
-                ("**`/mute <user> <duration> [reason]`**", "Timeout (1h, 1d, 1w)"),
+                ("**`/mute <user> <duration> [reason]`**", "Assign Muted role"),
+                ("**`/unmute <user>`**", "Remove Muted role"),
                 ("**`/restrict <user> <duration> [reason]`**", "Block images/embeds"),
                 ("**`/unrestrict <user>`**", "Restore access"),
                 ("**`/kick <user> [reason]`**", "Kick from server"),
@@ -246,7 +247,7 @@ async def help_command(inter: discord.Interaction):
             "commands": [
                 ("**`/setup view`**", "View all current settings"),
                 ("**`/setup channel <type> <#channel>`**", "Set bot channels"),
-                ("**`/setup role <type> <@role>`**", "Set roles (incl. warned, restricted)"),
+                ("**`/setup role <type> <@role>`**", "Set roles (muted, restricted)"),
                 ("**`/boosters`**", "List all server boosters"),
                 ("**`/reload [cog]`**", "Hot-reload bot cogs"),
             ]
