@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from discord.ext import commands
 
-from config import DISCORD_TOKEN
+from config import DISCORD_TOKEN, GUILD_ID
 from services.database import db
 from services.settings_service import settings_service
 
@@ -33,10 +33,14 @@ intents.reactions = True
 # Create bot instance
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+# Target guild object (created after bot connects)
+TARGET_GUILD = None
+
 
 @bot.event
 async def on_ready():
     """Called when the bot is ready."""
+    global TARGET_GUILD
     logger.info(f'Bot started as {bot.user}')
     
     # Initialize database
@@ -46,16 +50,17 @@ async def on_ready():
     # Check for missing settings
     await check_missing_settings()
     
-    # Sync slash commands to guild for instant update
+    # Get target guild
+    TARGET_GUILD = bot.get_guild(GUILD_ID)
+    
+    # Sync slash commands to the specific guild only
     try:
-        guild = bot.guilds[0] if bot.guilds else None
-        if guild:
-            bot.tree.copy_global_to(guild=guild)
-            synced = await bot.tree.sync(guild=guild)
-            logger.info(f'Synced {len(synced)} slash commands to {guild.name}')
+        if TARGET_GUILD:
+            bot.tree.copy_global_to(guild=TARGET_GUILD)
+            synced = await bot.tree.sync(guild=TARGET_GUILD)
+            logger.info(f'Synced {len(synced)} slash commands to {TARGET_GUILD.name}')
         else:
-            synced = await bot.tree.sync()
-            logger.info(f'Synced {len(synced)} slash commands globally')
+            logger.warning(f'Target guild {GUILD_ID} not found! Bot may not be in the server.')
     except Exception as e:
         logger.error(f'Failed to sync commands: {e}')
     
@@ -103,6 +108,7 @@ async def load_extensions():
         "cogs.moderation.mod_cog",
         "cogs.tracker.boost_cog",
         "cogs.setup.setup_cog",
+        "cogs.embed_cog",
     ]
     
     for cog in cog_modules:
@@ -126,6 +132,7 @@ async def reload(inter: discord.Interaction, cog: str = None):
         "boost": "cogs.tracker.boost_cog",
         "tracker": "cogs.tracker.boost_cog",
         "setup": "cogs.setup.setup_cog",
+        "embeds": "cogs.embed_cog",
     }
     
     if cog:

@@ -99,6 +99,27 @@ class Database:
                 FOREIGN KEY (code) REFERENCES event_codes(code) ON DELETE CASCADE
             )
         ''')
+        
+        # Scheduled embeds table (for Discohook embed scheduling)
+        await self.execute('''
+            CREATE TABLE IF NOT EXISTS scheduled_embeds (
+                identifier VARCHAR(10) PRIMARY KEY,
+                channel_id BIGINT NOT NULL,
+                user_id BIGINT NOT NULL,
+                content TEXT,
+                embed_json MEDIUMTEXT NOT NULL,
+                schedule_for DATETIME NOT NULL,
+                status VARCHAR(20) DEFAULT 'pending'
+            )
+        ''')
+        
+        # Guild settings table (for per-guild configuration)
+        await self.execute('''
+            CREATE TABLE IF NOT EXISTS guild_settings (
+                guild_id BIGINT PRIMARY KEY,
+                embed_log_channel_id BIGINT DEFAULT NULL
+            )
+        ''')
     
     async def close(self):
         """Close the database connection."""

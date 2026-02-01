@@ -16,6 +16,9 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 if not DISCORD_TOKEN:
     raise ValueError("DISCORD_TOKEN not found in environment variables!")
 
+# Target Guild (single-server bot)
+GUILD_ID = 1214845175960961025
+
 # Database Configuration
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
