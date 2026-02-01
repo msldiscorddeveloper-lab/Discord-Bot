@@ -408,6 +408,21 @@ class ModCog(commands.Cog, name="Moderation"):
         if not muted_role:
             return await inter.response.send_message("❌ Muted role not found.", ephemeral=True)
         
+        # TEMP DEBUG: First test if we can use Discord's native timeout
+        from datetime import timedelta
+        try:
+            # Try to apply a 1-minute timeout as a test
+            await user.timeout(timedelta(minutes=1), reason="Testing permissions")
+            # If we got here, timeout worked - remove it immediately
+            await user.timeout(None, reason="Test complete")
+            timeout_works = True
+        except discord.Forbidden as e:
+            timeout_works = False
+            timeout_error = str(e)
+        except Exception as e:
+            timeout_works = False  
+            timeout_error = f"{type(e).__name__}: {e}"
+        
         # TEMP DEBUG: Try direct role assignment without helper
         try:
             # Use the original user parameter directly (not refetched)
@@ -416,6 +431,7 @@ class ModCog(commands.Cog, name="Moderation"):
             bot_perms = inter.guild.me.guild_permissions
             return await inter.response.send_message(
                 f"❌ Direct add_roles failed.\n"
+                f"• Timeout test: {'✅ PASSED' if timeout_works else f'❌ FAILED - {timeout_error}'}\n"
                 f"• User param type: {type(user).__name__}\n"
                 f"• User guild: {user.guild.id if hasattr(user, 'guild') else 'None'}\n"  
                 f"• Inter guild: {inter.guild.id}\n"
