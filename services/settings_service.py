@@ -60,7 +60,7 @@ class SettingsService:
     
     async def get_all(self) -> dict:
         """Get all settings."""
-        rows = await db.fetch_all('SELECT key, value FROM server_settings')
+        rows = await db.fetch_all('SELECT `key`, value FROM server_settings')
         settings = dict(self.KEYS)  # Start with defaults
         for row in rows:
             settings[row['key']] = row['value']
