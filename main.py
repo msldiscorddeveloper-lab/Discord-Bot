@@ -231,13 +231,13 @@ async def help_command(inter: discord.Interaction):
             "emoji": "🛡️",
             "title": "Moderation",
             "commands": [
-                ("**`/kick <user> [reason]`**", "Kick a member"),
-                ("**`/ban <user> [reason]`**", "Ban a member"),
-                ("**`/warn <user> [reason]`**", "Issue a warning"),
-                ("**`/mute <user> <duration> [reason]`**", "Timeout member"),
-                ("**`/restrict <user>`**", "Remove verified role"),
-                ("**`/unrestrict <user>`**", "Restore verified role"),
-                ("**`/modlogs <user>`**", "View mod history"),
+                ("**`/warn <user> <reason>`**", "Warning + 24h XP lock"),
+                ("**`/mute <user> <duration> [reason]`**", "Timeout (1h, 1d, 1w)"),
+                ("**`/restrict <user> <duration> [reason]`**", "Block images/embeds"),
+                ("**`/unrestrict <user>`**", "Restore access"),
+                ("**`/kick <user> [reason]`**", "Kick from server"),
+                ("**`/ban <user> [duration] [reason]`**", "Ban (perm wipes data)"),
+                ("**`/history <user>`**", "View mod history"),
             ]
         },
         "admin_setup": {
@@ -246,7 +246,7 @@ async def help_command(inter: discord.Interaction):
             "commands": [
                 ("**`/setup view`**", "View all current settings"),
                 ("**`/setup channel <type> <#channel>`**", "Set bot channels"),
-                ("**`/setup role <type> <@role>`**", "Set bot roles"),
+                ("**`/setup role <type> <@role>`**", "Set roles (incl. warned, restricted)"),
                 ("**`/boosters`**", "List all server boosters"),
                 ("**`/reload [cog]`**", "Hot-reload bot cogs"),
             ]
