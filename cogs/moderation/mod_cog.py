@@ -475,6 +475,27 @@ class ModCog(commands.Cog, name="Moderation"):
                 checks.append(f"❌ **FORBIDDEN:** {e}")
                 checks.append(f"   Error code: {e.code}")
                 checks.append(f"   Error text: {e.text}")
+                
+                # Try raw HTTP to get more info
+                checks.append(f"\n**Trying raw HTTP request...**")
+                try:
+                    http = self.bot.http
+                    # Get current roles and add the new one
+                    current_role_ids = [r.id for r in user.roles]
+                    new_roles = current_role_ids + [role.id]
+                    
+                    await http.edit_member(
+                        guild.id,
+                        user.id,
+                        reason=f"Raw HTTP test by {inter.user}",
+                        roles=new_roles
+                    )
+                    checks.append(f"✅ Raw HTTP worked! Library issue?")
+                except Exception as http_e:
+                    checks.append(f"❌ Raw HTTP also failed: {type(http_e).__name__}: {http_e}")
+                    if hasattr(http_e, 'response'):
+                        checks.append(f"   Response: {http_e.response}")
+                
                 result = "FORBIDDEN"
             except discord.HTTPException as e:
                 checks.append(f"❌ **HTTP ERROR:** {e}")
