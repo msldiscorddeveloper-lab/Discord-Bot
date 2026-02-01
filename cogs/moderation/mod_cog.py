@@ -408,16 +408,23 @@ class ModCog(commands.Cog, name="Moderation"):
         if not muted_role:
             return await inter.response.send_message("❌ Muted role not found.", ephemeral=True)
         
-        # Apply Muted role with verification
-        success, error = await self._add_role_with_verification(
-            guild=inter.guild,
-            user_id=user.id,
-            role=muted_role,
-            reason=f"Muted by {inter.user}: {reason}"
-        )
-        
-        if not success:
-            return await inter.response.send_message(f"❌ {error}", ephemeral=True)
+        # TEMP DEBUG: Try direct role assignment without helper
+        try:
+            # Use the original user parameter directly (not refetched)
+            await user.add_roles(muted_role, reason=f"Muted by {inter.user}: {reason}")
+        except discord.Forbidden as e:
+            bot_perms = inter.guild.me.guild_permissions
+            return await inter.response.send_message(
+                f"❌ Direct add_roles failed.\n"
+                f"• User param type: {type(user).__name__}\n"
+                f"• User guild: {user.guild.id if hasattr(user, 'guild') else 'None'}\n"  
+                f"• Inter guild: {inter.guild.id}\n"
+                f"• Bot perms value: {bot_perms.value}\n"
+                f"• Error: {e}",
+                ephemeral=True
+            )
+        except Exception as e:
+            return await inter.response.send_message(f"❌ Unexpected error: {type(e).__name__}: {e}", ephemeral=True)
         
         # DM and log
         await self._notify_user(user, f"muted for {duration}", reason, inter.guild.name)
