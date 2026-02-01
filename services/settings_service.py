@@ -26,6 +26,10 @@ class SettingsService:
         "booster_spotlight_role_id": "0",
         "verified_role_id": "0",
         
+        # Moderation roles
+        "warned_role_id": "0",
+        "restricted_role_id": "0",
+        
         # Color roles (stored as JSON list)
         "booster_color_roles": "[]",
         

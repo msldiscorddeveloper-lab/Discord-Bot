@@ -58,6 +58,17 @@ class SetupCog(commands.Cog, name="Setup"):
         ])
         embed.add_field(name="🎭 Roles", value=role_text, inline=False)
         
+        # Moderation Roles
+        mod_roles = [
+            ("Warned", settings.get("warned_role_id", "0")),
+            ("Restricted", settings.get("restricted_role_id", "0")),
+        ]
+        mod_role_text = "\n".join([
+            f"**{name}:** <@&{rid}>" if rid != "0" else f"**{name}:** Not set"
+            for name, rid in mod_roles
+        ])
+        embed.add_field(name="🛡️ Moderation Roles", value=mod_role_text, inline=False)
+        
         # Cosmetics count
         color_roles = await settings_service.get_color_roles()
         emblem_roles = await settings_service.get_emblem_roles()
@@ -110,7 +121,7 @@ class SetupCog(commands.Cog, name="Setup"):
     async def setup_role(
         self, 
         inter: discord.Interaction, 
-        setting: Literal["server", "veteran", "mythic", "spotlight", "verified"],
+        setting: Literal["server", "veteran", "mythic", "spotlight", "verified", "warned", "restricted"],
         role: discord.Role
     ):
         key_map = {
@@ -119,6 +130,8 @@ class SetupCog(commands.Cog, name="Setup"):
             "mythic": "mythic_booster_role_id",
             "spotlight": "booster_spotlight_role_id",
             "verified": "verified_role_id",
+            "warned": "warned_role_id",
+            "restricted": "restricted_role_id",
         }
         await settings_service.set(key_map[setting], str(role.id))
         await inter.response.send_message(f"✅ **{setting}** role set to {role.mention}", ephemeral=True)

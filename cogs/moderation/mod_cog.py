@@ -184,6 +184,13 @@ class ModCog(commands.Cog, name="Moderation"):
         # Apply 24h XP lock
         await self._apply_xp_lock(user.id, 24)
         
+        # Apply Warned role if configured
+        warned_role_id = await settings_service.get_int("warned_role_id")
+        if warned_role_id:
+            warned_role = inter.guild.get_role(warned_role_id)
+            if warned_role and warned_role not in user.roles:
+                await user.add_roles(warned_role, reason=f"Warned: {reason}")
+        
         # DM user
         dm_sent = await self._notify_user(user, "warned", reason, inter.guild.name)
         
@@ -235,7 +242,7 @@ class ModCog(commands.Cog, name="Moderation"):
     @app_commands.command(name="restrict", description="Restrict user (remove verified, block images)")
     @app_commands.default_permissions(moderate_members=True)
     async def restrict(self, inter: discord.Interaction, user: discord.Member, duration: str, reason: str = None):
-        """Restrict user - removes verified role, blocks shop access."""
+        """Restrict user - removes verified role, adds restricted role."""
         if not await self._check_hierarchy(inter, user):
             return
         
@@ -252,6 +259,13 @@ class ModCog(commands.Cog, name="Moderation"):
             if verified_role and verified_role in user.roles:
                 await user.remove_roles(verified_role, reason="Restricted")
         
+        # Add Restricted role if configured (blocks Attach Files & Embed Links)
+        restricted_role_id = await settings_service.get_int("restricted_role_id")
+        if restricted_role_id:
+            restricted_role = inter.guild.get_role(restricted_role_id)
+            if restricted_role and restricted_role not in user.roles:
+                await user.add_roles(restricted_role, reason=f"Restricted: {reason}")
+        
         await mod_service.log_action("restrict", inter.user.id, user.id, f"{duration}: {reason or 'No reason'}")
         await self._notify_user(user, "restricted", reason, inter.guild.name)
         
@@ -259,7 +273,7 @@ class ModCog(commands.Cog, name="Moderation"):
         embed.add_field(name="User", value=user.mention, inline=True)
         embed.add_field(name="Duration", value=duration, inline=True)
         embed.add_field(name="Moderator", value=inter.user.mention, inline=True)
-        embed.add_field(name="Effects", value="• Verified status removed\n• Shop access blocked\n• Cannot send images/embeds", inline=False)
+        embed.add_field(name="Effects", value="• Verified status removed\n• Restricted role applied\n• Cannot send images/embeds", inline=False)
         if reason:
             embed.add_field(name="Reason", value=reason, inline=False)
         
@@ -279,9 +293,21 @@ class ModCog(commands.Cog, name="Moderation"):
             if verified_role:
                 await user.add_roles(verified_role, reason="Unrestricted")
         
+        # Remove Restricted role
+        restricted_role_id = await settings_service.get_int("restricted_role_id")
+        if restricted_role_id:
+            restricted_role = inter.guild.get_role(restricted_role_id)
+            if restricted_role and restricted_role in user.roles:
+                await user.remove_roles(restricted_role, reason="Unrestricted")
+        
         await mod_service.log_action("unrestrict", inter.user.id, user.id, None)
         
-        await inter.response.send_message(f"🔓 **{user.display_name}** has been unrestricted.")
+        embed = discord.Embed(title="🔓 User Unrestricted", color=discord.Color.green())
+        embed.add_field(name="User", value=user.mention, inline=True)
+        embed.add_field(name="Moderator", value=inter.user.mention, inline=True)
+        
+        await inter.response.send_message(embed=embed)
+        await self._log_to_channel(inter.guild, embed)
         
     @app_commands.command(name="ban", description="Ban a user (perm wipes economy)")
     @app_commands.default_permissions(ban_members=True)
