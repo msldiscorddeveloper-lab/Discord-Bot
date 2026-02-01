@@ -180,6 +180,141 @@ async def ping(inter: discord.Interaction):
     await inter.response.send_message(f"🏓 Pong! Latency: `{latency}ms`")
 
 
+@bot.tree.command(name="help", description="View all available commands")
+async def help_command(inter: discord.Interaction):
+    """Display commands based on user's roles and permissions."""
+    
+    # ─────────────────────────────────────────────────────────────────
+    # Command Metadata: Define all commands with their category
+    # Categories: 'general', 'booster', 'admin'
+    # ─────────────────────────────────────────────────────────────────
+    
+    COMMANDS = {
+        "general": {
+            "emoji": "🎯",
+            "title": "General",
+            "commands": [
+                ("**`/help`**", "Show this help menu"),
+                ("**`/ping`**", "Check bot response time"),
+                ("**`/rank [user]`**", "View XP and server rank"),
+                ("**`/leaderboard`**", "View top 10 XP earners"),
+            ]
+        },
+        "booster": {
+            "emoji": "💎",
+            "title": "Booster Perks",
+            "commands": [
+                ("**`/boostperks`**", "View your tier and multipliers"),
+                ("**`/colorpick`**", "Choose a custom name color"),
+                ("**`/emblempick`**", "Choose an emblem badge"),
+                ("**`/pouch`**", "Claim daily token pouch"),
+            ]
+        },
+        "admin_voice": {
+            "emoji": "🎤",
+            "title": "Voice Channels",
+            "commands": [
+                ("**`/autocreate_setup <channel>`**", "Set up auto-create VC"),
+                ("**`/autocreate_remove <channel>`**", "Remove auto-create"),
+            ]
+        },
+        "admin_embeds": {
+            "emoji": "📝",
+            "title": "Embeds",
+            "commands": [
+                ("**`/send_embed <channel> <link> [mins]`**", "Send/schedule embed"),
+                ("**`/cancel_embed`**", "Cancel scheduled embed"),
+                ("**`/set_embed_log <channel>`**", "Set embed log channel"),
+            ]
+        },
+        "admin_mod": {
+            "emoji": "🛡️",
+            "title": "Moderation",
+            "commands": [
+                ("**`/kick <user> [reason]`**", "Kick a member"),
+                ("**`/ban <user> [reason]`**", "Ban a member"),
+                ("**`/warn <user> [reason]`**", "Issue a warning"),
+                ("**`/mute <user> <duration> [reason]`**", "Timeout member"),
+                ("**`/restrict <user>`**", "Remove verified role"),
+                ("**`/unrestrict <user>`**", "Restore verified role"),
+                ("**`/modlogs <user>`**", "View mod history"),
+            ]
+        },
+        "admin_setup": {
+            "emoji": "⚙️",
+            "title": "Setup",
+            "commands": [
+                ("**`/setup view`**", "View all current settings"),
+                ("**`/setup channel <type> <#channel>`**", "Set bot channels"),
+                ("**`/setup role <type> <@role>`**", "Set bot roles"),
+                ("**`/boosters`**", "List all server boosters"),
+                ("**`/reload [cog]`**", "Hot-reload bot cogs"),
+            ]
+        },
+    }
+    
+    # ─────────────────────────────────────────────────────────────────
+    # Determine User's Access Level
+    # ─────────────────────────────────────────────────────────────────
+    
+    member = inter.user
+    is_admin = member.guild_permissions.administrator if inter.guild else False
+    is_booster = member.premium_since is not None if hasattr(member, 'premium_since') else False
+    
+    # Determine which categories to show
+    visible_categories = ["general"]
+    
+    if is_booster or is_admin:
+        visible_categories.append("booster")
+    
+    if is_admin:
+        visible_categories.extend(["admin_voice", "admin_embeds", "admin_mod", "admin_setup"])
+    
+    # ─────────────────────────────────────────────────────────────────
+    # Build the Embed
+    # ─────────────────────────────────────────────────────────────────
+    
+    # Set title and color based on access level
+    if is_admin:
+        title = "📖 Bot Commands (Admin View)"
+        color = discord.Color.red()
+        description = "You have **admin** access. Showing all commands."
+    elif is_booster:
+        title = "📖 Bot Commands (Booster View)"
+        color = discord.Color(0xf47fff)  # Nitro pink
+        description = "You have **booster** perks! Showing general + booster commands."
+    else:
+        title = "📖 Bot Commands"
+        color = discord.Color.blue()
+        description = "Showing public commands available to everyone."
+    
+    embed = discord.Embed(title=title, description=description, color=color)
+    
+    # Add fields for each visible category
+    for cat_key in visible_categories:
+        cat = COMMANDS[cat_key]
+        
+        # Format commands as "command — description"
+        lines = [f"{cmd} — {desc}" for cmd, desc in cat["commands"]]
+        value = "\n".join(lines)
+        
+        embed.add_field(
+            name=f"{cat['emoji']} {cat['title']}",
+            value=value,
+            inline=False
+        )
+    
+    # Footer based on access level
+    if not is_admin and not is_booster:
+        embed.set_footer(text="� Boost the server to unlock booster-exclusive commands!")
+    elif is_booster and not is_admin:
+        embed.set_footer(text="💜 Thank you for boosting!")
+    else:
+        embed.set_footer(text="🔐 Administrator access granted")
+    
+    await inter.response.send_message(embed=embed, ephemeral=True)
+
+
 async def main():
     """Main entry point."""
     await load_extensions()
