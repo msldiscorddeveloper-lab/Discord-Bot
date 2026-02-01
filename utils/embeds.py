@@ -161,7 +161,7 @@ def create_boost_announcement_embed(member: discord.Member) -> discord.Embed:
             f"**{member.mention}** just boosted the server!\n\n"
             f"We now have **{guild.premium_subscription_count}** boosts!"
         ),
-        color=discord.Color.nitro_pink(),
+        color=discord.Color(0xf47fff),
         timestamp=datetime.now()
     )
     
