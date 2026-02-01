@@ -176,10 +176,13 @@ class ModCog(commands.Cog, name="Moderation"):
             except discord.Forbidden as e:
                 # Gather detailed debug info
                 bot_perms = guild.me.guild_permissions
+                is_owner = member.id == guild.owner_id if guild.owner_id else False
                 return False, (
                     f"Missing Permissions.\n"
                     f"• Bot role position: {guild.me.top_role.position}\n"
                     f"• Target role position: {role.position}\n"
+                    f"• Member's top role position: {member.top_role.position}\n"
+                    f"• Member is server owner: {is_owner}\n"
                     f"• Role managed by integration: {role.managed}\n"
                     f"• Bot has Manage Roles: {bot_perms.manage_roles}\n"
                     f"• Bot has Admin: {bot_perms.administrator}\n"
