@@ -120,6 +120,14 @@ class Database:
                 embed_log_channel_id BIGINT DEFAULT NULL
             )
         ''')
+        
+        # Auto-create voice channel configs
+        await self.execute('''
+            CREATE TABLE IF NOT EXISTS autocreate_configs (
+                voice_channel_id BIGINT PRIMARY KEY,
+                category_id BIGINT
+            )
+        ''')
     
     async def close(self):
         """Close the database connection."""

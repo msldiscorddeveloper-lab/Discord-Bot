@@ -115,6 +115,7 @@ async def load_extensions():
         "cogs.tracker.boost_cog",
         "cogs.setup.setup_cog",
         "cogs.embed_cog",
+        "cogs.voice_cog",
     ]
     
     for cog in cog_modules:
@@ -139,6 +140,7 @@ async def reload(inter: discord.Interaction, cog: str = None):
         "tracker": "cogs.tracker.boost_cog",
         "setup": "cogs.setup.setup_cog",
         "embeds": "cogs.embed_cog",
+        "voice": "cogs.voice_cog",
     }
     
     if cog:
