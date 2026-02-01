@@ -56,6 +56,12 @@ async def on_ready():
     # Sync slash commands to the specific guild only
     try:
         if TARGET_GUILD:
+            # Debug: Show how many commands are in the tree
+            all_commands = bot.tree.get_commands()
+            logger.info(f'Commands in tree before sync: {len(all_commands)}')
+            for cmd in all_commands:
+                logger.info(f'  - /{cmd.name}')
+            
             bot.tree.copy_global_to(guild=TARGET_GUILD)
             synced = await bot.tree.sync(guild=TARGET_GUILD)
             logger.info(f'Synced {len(synced)} slash commands to {TARGET_GUILD.name}')
