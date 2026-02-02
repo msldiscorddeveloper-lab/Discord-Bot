@@ -295,6 +295,35 @@ class ModCog(commands.Cog, name="Moderation"):
         ''', (user_id,))
     
     # ─────────────────────────────────────────────────────────────────────
+    # Auto-Role Configuration
+    # ─────────────────────────────────────────────────────────────────────
+    
+    AUTO_ROLE_ID = 1465984054049374218  # Role assigned to new members
+    
+    # ─────────────────────────────────────────────────────────────────────
+    # Event Listeners
+    # ─────────────────────────────────────────────────────────────────────
+    
+    @commands.Cog.listener()
+    async def on_member_join(self, member: discord.Member):
+        """Assign auto-role to new members."""
+        if member.bot:
+            return
+        
+        role = member.guild.get_role(self.AUTO_ROLE_ID)
+        if not role:
+            print(f"[ModCog] Auto-role {self.AUTO_ROLE_ID} not found in guild")
+            return
+        
+        try:
+            await member.add_roles(role, reason="Auto-role on join")
+            print(f"[ModCog] Assigned auto-role to {member.display_name}")
+        except discord.Forbidden as e:
+            print(f"[ModCog] Failed to assign auto-role to {member.display_name}: {e}")
+        except discord.HTTPException as e:
+            print(f"[ModCog] HTTP error assigning auto-role: {e}")
+    
+    # ─────────────────────────────────────────────────────────────────────
     # Slash Commands
     # ─────────────────────────────────────────────────────────────────────
     
@@ -378,6 +407,57 @@ class ModCog(commands.Cog, name="Moderation"):
         
         await inter.response.send_message(embed=embed)
         await self._log_to_channel(inter.guild, embed)
+    
+    @app_commands.command(name="assign-autorole", description="Assign auto-role to all members who don't have it")
+    @app_commands.default_permissions(administrator=True)
+    async def assign_autorole(self, inter: discord.Interaction):
+        """Bulk-assign the auto-role to existing members without it."""
+        await inter.response.defer(ephemeral=True)
+        
+        role = inter.guild.get_role(self.AUTO_ROLE_ID)
+        if not role:
+            return await inter.followup.send(f"❌ Auto-role with ID `{self.AUTO_ROLE_ID}` not found.", ephemeral=True)
+        
+        # Find members without the role
+        members_without_role = [
+            m for m in inter.guild.members 
+            if not m.bot and role not in m.roles
+        ]
+        
+        if not members_without_role:
+            return await inter.followup.send(f"✅ All members already have the {role.mention} role.", ephemeral=True)
+        
+        # Progress update
+        total = len(members_without_role)
+        await inter.followup.send(
+            f"🔄 Assigning {role.mention} to **{total}** members...\nThis may take a while.",
+            ephemeral=True
+        )
+        
+        success_count = 0
+        fail_count = 0
+        
+        for member in members_without_role:
+            try:
+                await member.add_roles(role, reason="Bulk auto-role assignment")
+                success_count += 1
+            except (discord.Forbidden, discord.HTTPException):
+                fail_count += 1
+            
+            # Small delay to avoid rate limits
+            import asyncio
+            await asyncio.sleep(0.5)
+        
+        # Final report
+        embed = discord.Embed(
+            title="✅ Auto-Role Assignment Complete",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Role", value=role.mention, inline=True)
+        embed.add_field(name="Assigned", value=str(success_count), inline=True)
+        embed.add_field(name="Failed", value=str(fail_count), inline=True)
+        
+        await inter.followup.send(embed=embed, ephemeral=True)
     
     # ─────────────────────────────────────────────────────────────────────
     # DIAGNOSTIC COMMAND - Remove after debugging
