@@ -349,7 +349,7 @@ class ModCog(commands.Cog, name="Moderation"):
                 action = entry['action_type'].upper()
                 mod_id = entry['moderator_id']
                 reason = entry['reason'] or "No reason"
-                timestamp = entry['timestamp'][:10] if entry['timestamp'] else "Unknown"
+                timestamp = entry['timestamp'].strftime('%Y-%m-%d') if entry['timestamp'] else "Unknown"
                 
                 lines.append(f"{icon} **{action}** | <@{mod_id}> | {timestamp}\n└ {reason[:50]}")
             
