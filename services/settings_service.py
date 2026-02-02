@@ -10,9 +10,17 @@ class SettingsService:
     
     # Default settings keys
     KEYS = {
-        # Channels
-        "bot_channel_id": "0",
-        "boost_announce_channel_id": "0",
+        # Log Channels
+        "message_log_channel_id": "0",      # Message edit/delete logs
+        "ticket_log_channel_id": "0",       # Ticket logs and transcripts
+        "voice_log_channel_id": "0",        # Voice channel creation/join logs
+        "giveaway_log_channel_id": "0",     # Giveaway entries and winners
+        
+        # Boost Channels
+        "boost_public_channel_id": "0",     # Booster-facing announcements
+        "boost_admin_channel_id": "0",      # Admin-facing with full details
+        
+        # Moderation Channels
         "mod_log_channel_id": "0",
         "command_log_channel_id": "0",
         

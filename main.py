@@ -70,12 +70,7 @@ async def on_ready():
     except Exception as e:
         logger.error(f'Failed to sync commands: {e}')
     
-    # Send startup message
-    bot_channel_id = await settings_service.get_int("bot_channel_id")
-    if bot_channel_id:
-        channel = bot.get_channel(bot_channel_id)
-        if channel:
-            await channel.send("✅ Bot started successfully!")
+    logger.info('✅ Bot startup complete!')
 
 
 @bot.event
@@ -134,15 +129,15 @@ async def on_interaction(interaction: discord.Interaction):
 async def check_missing_settings():
     """Log warnings for settings that haven't been configured."""
     settings_to_check = {
-        # Channels
-        "bot_channel_id": "Bot Channel (/setup channel bot #channel)",
-        "boost_announce_channel_id": "Boost Announce (/setup channel announce #channel)",
+        # Boost Channels (most important)
+        "boost_public_channel_id": "Boost Public (/setup channel boost_public #channel)",
+        "boost_admin_channel_id": "Boost Admin (/setup channel boost_admin #channel)",
+        # Mod Channels
         "mod_log_channel_id": "Mod Log (/setup channel modlog #channel)",
-        "command_log_channel_id": "Command Log (/setup channel cmdlog #channel)",
         # Roles
         "server_booster_role_id": "Server Booster Role (/setup role server @role)",
-        "veteran_booster_role_id": "Veteran Booster Role (/setup role veteran @role)",
-        "mythic_booster_role_id": "Mythic Booster Role (/setup role mythic @role)",
+        "muted_role_id": "Muted Role (/setup role muted @role)",
+        "restricted_role_id": "Restricted Role (/setup role restricted @role)",
     }
     
     missing = []
@@ -299,10 +294,10 @@ async def help_command(inter: discord.Interaction):
             "title": "Setup",
             "commands": [
                 ("**`/setup view`**", "View all current settings"),
-                ("**`/setup channel <type> <#channel>`**", "Set channels (bot, announce, modlog, cmdlog)"),
-                ("**`/setup role <type> <@role>`**", "Set roles (muted, restricted)"),
-                ("**`/boosters`**", "List all server boosters"),
-                ("**`/reload [cog]`**", "Hot-reload bot cogs"),
+                ("**`/setup channel <type> <#ch>`**", "Set channels"),
+                ("**`/setup role <type> <@role>`**", "Set roles"),
+                ("**`/boosters`**", "List all boosters"),
+                ("**`/reload [cog]`**", "Hot-reload cogs"),
             ]
         },
     }

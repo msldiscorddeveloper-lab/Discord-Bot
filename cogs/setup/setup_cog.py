@@ -30,20 +30,45 @@ class SetupCog(commands.Cog, name="Setup"):
         
         embed = discord.Embed(title="⚙️ Bot Settings", color=discord.Color.blue())
         
-        # Channels
-        channels = [
-            ("Bot Channel", settings.get("bot_channel_id", "0")),
-            ("Boost Announce", settings.get("boost_announce_channel_id", "0")),
+        # Log Channels (with feature status)
+        log_channels = [
+            ("Message Logs", settings.get("message_log_channel_id", "0"), False),  # Not implemented
+            ("Ticket Logs", settings.get("ticket_log_channel_id", "0"), False),    # Not implemented
+            ("Voice Logs", settings.get("voice_log_channel_id", "0"), False),      # Not implemented
+            ("Giveaway Logs", settings.get("giveaway_log_channel_id", "0"), False), # Not implemented
+        ]
+        log_lines = []
+        for name, cid, implemented in log_channels:
+            status = "" if implemented else " 🔜"
+            if cid != "0":
+                log_lines.append(f"**{name}:** <#{cid}>{status}")
+            else:
+                log_lines.append(f"**{name}:** Not set{status}")
+        embed.add_field(name="📋 Log Channels", value="\n".join(log_lines) + "\n*🔜 = Coming soon*", inline=False)
+        
+        # Boost Channels (fully implemented)
+        boost_channels = [
+            ("Boost Public", settings.get("boost_public_channel_id", "0")),
+            ("Boost Admin", settings.get("boost_admin_channel_id", "0")),
+        ]
+        boost_text = "\n".join([
+            f"**{name}:** <#{cid}>" if cid != "0" else f"**{name}:** Not set"
+            for name, cid in boost_channels
+        ])
+        embed.add_field(name="🚀 Boost Channels", value=boost_text, inline=False)
+        
+        # Mod Channels (fully implemented)
+        mod_channels = [
             ("Mod Log", settings.get("mod_log_channel_id", "0")),
             ("Command Log", settings.get("command_log_channel_id", "0")),
         ]
-        channel_text = "\n".join([
+        mod_text = "\n".join([
             f"**{name}:** <#{cid}>" if cid != "0" else f"**{name}:** Not set"
-            for name, cid in channels
+            for name, cid in mod_channels
         ])
-        embed.add_field(name="📢 Channels", value=channel_text, inline=False)
+        embed.add_field(name="🛡️ Mod Channels", value=mod_text, inline=False)
         
-        # Roles
+        # Booster Roles
         roles = [
             ("Server Booster", settings.get("server_booster_role_id", "0")),
             ("Veteran Booster", settings.get("veteran_booster_role_id", "0")),
@@ -54,7 +79,7 @@ class SetupCog(commands.Cog, name="Setup"):
             f"**{name}:** <@&{rid}>" if rid != "0" else f"**{name}:** Not set"
             for name, rid in roles
         ])
-        embed.add_field(name="🎭 Roles", value=role_text, inline=False)
+        embed.add_field(name="🚀 Booster Roles", value=role_text, inline=False)
         
         # Moderation Roles
         mod_roles = [
@@ -90,12 +115,23 @@ class SetupCog(commands.Cog, name="Setup"):
     async def setup_channel(
         self, 
         inter: discord.Interaction, 
-        setting: Literal["bot", "announce", "modlog", "cmdlog"],
+        setting: Literal[
+            "message_log", "ticket_log", "voice_log", "giveaway_log",
+            "boost_public", "boost_admin",
+            "modlog", "cmdlog"
+        ],
         channel: discord.TextChannel
     ):
         key_map = {
-            "bot": "bot_channel_id",
-            "announce": "boost_announce_channel_id",
+            # Log channels
+            "message_log": "message_log_channel_id",
+            "ticket_log": "ticket_log_channel_id",
+            "voice_log": "voice_log_channel_id",
+            "giveaway_log": "giveaway_log_channel_id",
+            # Boost channels
+            "boost_public": "boost_public_channel_id",
+            "boost_admin": "boost_admin_channel_id",
+            # Mod channels
             "modlog": "mod_log_channel_id",
             "cmdlog": "command_log_channel_id",
         }

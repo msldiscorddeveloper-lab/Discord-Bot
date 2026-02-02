@@ -49,8 +49,11 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
     async def _get_spotlight_role_id(self) -> int:
         return await settings_service.get_int("booster_spotlight_role_id")
     
-    async def _get_announce_channel_id(self) -> int:
-        return await settings_service.get_int("boost_announce_channel_id")
+    async def _get_boost_public_channel_id(self) -> int:
+        return await settings_service.get_int("boost_public_channel_id")
+    
+    async def _get_boost_admin_channel_id(self) -> int:
+        return await settings_service.get_int("boost_admin_channel_id")
     
     # ─────────────────────────────────────────────────────────────────────
     # Helper Methods
@@ -281,14 +284,33 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         # Add S1 Booster badge
         await self._add_badge(user_id, "S1 Booster")
         
-        # Announce
-        channel_id = await self._get_announce_channel_id()
-        if channel_id:
-            channel = self.bot.get_channel(channel_id)
+        # Public announcement (simple - who boosted)
+        public_channel_id = await self._get_boost_public_channel_id()
+        if public_channel_id:
+            channel = self.bot.get_channel(public_channel_id)
             if channel:
-                embed = create_boost_announcement_embed(member)
+                public_embed = discord.Embed(
+                    title="🚀 New Server Boost!",
+                    description=f"**{member.display_name}** just boosted the server!",
+                    color=discord.Color.nitro_pink()
+                )
+                public_embed.set_thumbnail(url=member.display_avatar.url)
                 try:
-                    await channel.send(embed=embed)
+                    await channel.send(embed=public_embed)
+                except discord.Forbidden:
+                    pass
+        
+        # Admin announcement (detailed)
+        admin_channel_id = await self._get_boost_admin_channel_id()
+        if admin_channel_id:
+            channel = self.bot.get_channel(admin_channel_id)
+            if channel:
+                admin_embed = create_boost_announcement_embed(member)
+                admin_embed.add_field(name="Tier Assigned", value=tier["name"], inline=True)
+                admin_embed.add_field(name="XP Multiplier", value=f"{tier['xp_multiplier']}x", inline=True)
+                admin_embed.add_field(name="Token Multiplier", value=f"{tier['token_multiplier']}x", inline=True)
+                try:
+                    await channel.send(embed=admin_embed)
                 except discord.Forbidden:
                     pass
         
@@ -305,6 +327,38 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
                 color_role_id = NULL, emblem_role_id = NULL
             WHERE user_id = %s
         ''', (member.id,))
+        
+        # Public notification (simple)
+        public_channel_id = await self._get_boost_public_channel_id()
+        if public_channel_id:
+            channel = self.bot.get_channel(public_channel_id)
+            if channel:
+                public_embed = discord.Embed(
+                    title="💔 Boost Ended",
+                    description=f"**{member.display_name}**'s boost has expired.",
+                    color=discord.Color.dark_grey()
+                )
+                try:
+                    await channel.send(embed=public_embed)
+                except discord.Forbidden:
+                    pass
+        
+        # Admin notification (detailed)
+        admin_channel_id = await self._get_boost_admin_channel_id()
+        if admin_channel_id:
+            channel = self.bot.get_channel(admin_channel_id)
+            if channel:
+                admin_embed = discord.Embed(
+                    title="💔 Boost Expired",
+                    color=discord.Color.red()
+                )
+                admin_embed.add_field(name="User", value=f"{member.mention} ({member})", inline=True)
+                admin_embed.add_field(name="User ID", value=str(member.id), inline=True)
+                admin_embed.add_field(name="Action", value="Perks removed, badges kept", inline=False)
+                try:
+                    await channel.send(embed=admin_embed)
+                except discord.Forbidden:
+                    pass
         
         print(f"[BoostTracker] {member.display_name}'s boost expired. Perks removed, badges kept.")
     
