@@ -411,53 +411,230 @@ class ModCog(commands.Cog, name="Moderation"):
     @app_commands.command(name="assign-autorole", description="Assign auto-role to all members who don't have it")
     @app_commands.default_permissions(administrator=True)
     async def assign_autorole(self, inter: discord.Interaction):
-        """Bulk-assign the auto-role to existing members without it."""
+        """
+        Bulk-assign the auto-role to existing members without it.
+        
+        Features:
+        - Concurrent batching for ~5x speed improvement
+        - Dynamic progress bar updates
+        - Graceful error handling with detailed reporting
+        - Rate limit aware with automatic throttling
+        """
+        import asyncio
+        import time
+        
         await inter.response.defer(ephemeral=True)
+        
+        # ─────────────────────────────────────────────────────────────────
+        # Validation
+        # ─────────────────────────────────────────────────────────────────
         
         role = inter.guild.get_role(self.AUTO_ROLE_ID)
         if not role:
-            return await inter.followup.send(f"❌ Auto-role with ID `{self.AUTO_ROLE_ID}` not found.", ephemeral=True)
+            return await inter.followup.send(
+                f"❌ Auto-role with ID `{self.AUTO_ROLE_ID}` not found.\n"
+                f"Please verify the role exists and update `AUTO_ROLE_ID` in the code.",
+                ephemeral=True
+            )
         
-        # Find members without the role
+        # Check bot permissions
+        bot_member = inter.guild.me
+        if not bot_member.guild_permissions.manage_roles:
+            return await inter.followup.send(
+                "❌ I don't have the **Manage Roles** permission.",
+                ephemeral=True
+            )
+        
+        # Check role hierarchy
+        if role.position >= bot_member.top_role.position:
+            return await inter.followup.send(
+                f"❌ The role {role.mention} is higher than or equal to my highest role.\n"
+                f"Please move my role above it in Server Settings → Roles.",
+                ephemeral=True
+            )
+        
+        # ─────────────────────────────────────────────────────────────────
+        # Find members needing the role
+        # ─────────────────────────────────────────────────────────────────
+        
         members_without_role = [
             m for m in inter.guild.members 
             if not m.bot and role not in m.roles
         ]
         
         if not members_without_role:
-            return await inter.followup.send(f"✅ All members already have the {role.mention} role.", ephemeral=True)
+            embed = discord.Embed(
+                title="✅ All Set!",
+                description=f"All members already have the {role.mention} role.",
+                color=discord.Color.green()
+            )
+            return await inter.followup.send(embed=embed, ephemeral=True)
         
-        # Progress update
         total = len(members_without_role)
-        await inter.followup.send(
-            f"🔄 Assigning {role.mention} to **{total}** members...\nThis may take a while.",
-            ephemeral=True
-        )
+        
+        # ─────────────────────────────────────────────────────────────────
+        # Progress tracking
+        # ─────────────────────────────────────────────────────────────────
+        
+        def create_progress_embed(processed: int, success: int, failed: int, skipped: int, elapsed: float) -> discord.Embed:
+            """Create a progress embed with visual bar."""
+            progress = processed / total if total > 0 else 1
+            bar_length = 20
+            filled = int(bar_length * progress)
+            bar = "█" * filled + "░" * (bar_length - filled)
+            
+            # Estimate time remaining
+            if processed > 0 and elapsed > 0:
+                rate = processed / elapsed
+                remaining = (total - processed) / rate if rate > 0 else 0
+                eta = f"{remaining:.0f}s" if remaining < 60 else f"{remaining/60:.1f}m"
+            else:
+                eta = "calculating..."
+            
+            embed = discord.Embed(
+                title="🔄 Assigning Roles...",
+                description=f"`{bar}` {progress*100:.1f}%\n\n"
+                           f"**Progress:** {processed}/{total} members",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="✅ Assigned", value=str(success), inline=True)
+            embed.add_field(name="❌ Failed", value=str(failed), inline=True)
+            embed.add_field(name="⏭️ Skipped", value=str(skipped), inline=True)
+            embed.add_field(name="⏱️ ETA", value=eta, inline=True)
+            embed.add_field(name="⚡ Rate", value=f"{rate:.1f}/s" if processed > 0 else "—", inline=True)
+            
+            return embed
+        
+        def create_final_embed(success: int, failed: int, skipped: int, elapsed: float) -> discord.Embed:
+            """Create the final results embed."""
+            color = discord.Color.green() if failed == 0 else discord.Color.orange()
+            
+            embed = discord.Embed(
+                title="✅ Auto-Role Assignment Complete",
+                description=f"Finished assigning {role.mention} to members.",
+                color=color
+            )
+            embed.add_field(name="✅ Assigned", value=str(success), inline=True)
+            embed.add_field(name="❌ Failed", value=str(failed), inline=True)
+            embed.add_field(name="⏭️ Skipped", value=str(skipped), inline=True)
+            embed.add_field(name="⏱️ Duration", value=f"{elapsed:.1f}s", inline=True)
+            
+            if failed > 0:
+                embed.add_field(
+                    name="⚠️ Note",
+                    value="Some members couldn't be assigned the role. This may be due to:\n"
+                          "• Members with higher roles than the bot\n"
+                          "• Server owner (cannot have roles modified)\n"
+                          "• Rate limiting (try again later)",
+                    inline=False
+                )
+            
+            return embed
+        
+        # ─────────────────────────────────────────────────────────────────
+        # Batch processing with concurrency
+        # ─────────────────────────────────────────────────────────────────
+        
+        BATCH_SIZE = 5  # Concurrent operations per batch
+        DELAY_BETWEEN_BATCHES = 0.6  # Seconds between batches (safe rate)
+        UPDATE_INTERVAL = 15  # Update progress every N members
         
         success_count = 0
         fail_count = 0
+        skip_count = 0
+        processed_count = 0
+        start_time = time.time()
+        last_update_time = 0
         
-        for member in members_without_role:
-            try:
-                await member.add_roles(role, reason="Bulk auto-role assignment")
-                success_count += 1
-            except (discord.Forbidden, discord.HTTPException):
-                fail_count += 1
-            
-            # Small delay to avoid rate limits
-            import asyncio
-            await asyncio.sleep(0.5)
-        
-        # Final report
-        embed = discord.Embed(
-            title="✅ Auto-Role Assignment Complete",
-            color=discord.Color.green()
+        # Send initial progress message
+        progress_msg = await inter.followup.send(
+            embed=create_progress_embed(0, 0, 0, 0, 0),
+            ephemeral=True,
+            wait=True
         )
-        embed.add_field(name="Role", value=role.mention, inline=True)
-        embed.add_field(name="Assigned", value=str(success_count), inline=True)
-        embed.add_field(name="Failed", value=str(fail_count), inline=True)
         
-        await inter.followup.send(embed=embed, ephemeral=True)
+        async def assign_role_to_member(member: discord.Member) -> str:
+            """Assign role to a single member. Returns 'success', 'failed', or 'skipped'."""
+            try:
+                # Skip if member now has the role (race condition check)
+                if role in member.roles:
+                    return 'skipped'
+                
+                # Skip server owner (can't modify their roles)
+                if member.id == inter.guild.owner_id:
+                    return 'skipped'
+                
+                # Skip if member's top role is higher than bot's
+                if member.top_role.position >= bot_member.top_role.position:
+                    return 'skipped'
+                
+                await member.add_roles(role, reason="Bulk auto-role assignment")
+                return 'success'
+                
+            except discord.Forbidden:
+                return 'failed'
+            except discord.HTTPException as e:
+                # Rate limit - wait and retry once
+                if e.status == 429:
+                    await asyncio.sleep(float(e.response.headers.get('Retry-After', 5)))
+                    try:
+                        await member.add_roles(role, reason="Bulk auto-role assignment (retry)")
+                        return 'success'
+                    except:
+                        return 'failed'
+                return 'failed'
+            except Exception:
+                return 'failed'
+        
+        # Process in batches
+        for i in range(0, total, BATCH_SIZE):
+            batch = members_without_role[i:i + BATCH_SIZE]
+            
+            # Process batch concurrently
+            results = await asyncio.gather(*[assign_role_to_member(m) for m in batch])
+            
+            # Count results
+            for result in results:
+                processed_count += 1
+                if result == 'success':
+                    success_count += 1
+                elif result == 'failed':
+                    fail_count += 1
+                else:
+                    skip_count += 1
+            
+            # Update progress bar periodically
+            elapsed = time.time() - start_time
+            if processed_count % UPDATE_INTERVAL == 0 or processed_count == total:
+                # Throttle message edits (max 1 per second)
+                if elapsed - last_update_time >= 1.0:
+                    try:
+                        await progress_msg.edit(
+                            embed=create_progress_embed(processed_count, success_count, fail_count, skip_count, elapsed)
+                        )
+                        last_update_time = elapsed
+                    except discord.HTTPException:
+                        pass  # Message edit failed, continue anyway
+            
+            # Delay between batches to respect rate limits
+            if i + BATCH_SIZE < total:
+                await asyncio.sleep(DELAY_BETWEEN_BATCHES)
+        
+        # ─────────────────────────────────────────────────────────────────
+        # Final report
+        # ─────────────────────────────────────────────────────────────────
+        
+        elapsed = time.time() - start_time
+        try:
+            await progress_msg.edit(
+                embed=create_final_embed(success_count, fail_count, skip_count, elapsed)
+            )
+        except discord.HTTPException:
+            # If edit fails, send a new message
+            await inter.followup.send(
+                embed=create_final_embed(success_count, fail_count, skip_count, elapsed),
+                ephemeral=True
+            )
     
     # ─────────────────────────────────────────────────────────────────────
     # DIAGNOSTIC COMMAND - Remove after debugging
