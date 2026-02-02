@@ -330,47 +330,120 @@ class ModCog(commands.Cog, name="Moderation"):
     @app_commands.command(name="history", description="View a user's moderation history (Rap Sheet)")
     @app_commands.default_permissions(moderate_members=True)
     async def history(self, inter: discord.Interaction, user: discord.Member):
-        """Display visual moderation history."""
+        """Display visual moderation history with improved layout."""
         history = await mod_service.get_user_history(user.id, limit=10)
         
+        # Count infractions by type
+        action_counts = {}
+        for entry in history:
+            action = entry['action_type']
+            action_counts[action] = action_counts.get(action, 0) + 1
+        
+        # Determine embed color based on severity
+        if not history:
+            color = discord.Color.green()
+        elif len(history) >= 5:
+            color = discord.Color.red()
+        elif len(history) >= 2:
+            color = discord.Color.orange()
+        else:
+            color = discord.Color.yellow()
+        
         embed = discord.Embed(
-            title=f"📋 Moderation History",
-            description=f"**User:** {user.mention} ({user.id})\n**Total Infractions:** {len(history)}",
-            color=discord.Color.dark_embed()
+            title="📋 Moderation History",
+            color=color
+        )
+        
+        # User info header
+        account_age = (discord.utils.utcnow() - user.created_at).days
+        joined_days = (discord.utils.utcnow() - user.joined_at).days if user.joined_at else 0
+        
+        embed.set_author(
+            name=f"{user.display_name}",
+            icon_url=user.display_avatar.url
         )
         embed.set_thumbnail(url=user.display_avatar.url)
         
-        if not history:
-            embed.add_field(name="Record", value="✨ Clean record!", inline=False)
+        # Summary stats
+        summary_lines = [
+            f"**User ID:** `{user.id}`",
+            f"**Account Age:** {account_age} days",
+            f"**Server Member:** {joined_days} days",
+        ]
+        embed.add_field(name="👤 User Info", value="\n".join(summary_lines), inline=True)
+        
+        # Infraction summary
+        if action_counts:
+            stats_lines = [f"{self._get_action_icon(k)} {k.title()}: **{v}**" for k, v in action_counts.items()]
+            embed.add_field(name="📊 Summary", value="\n".join(stats_lines), inline=True)
         else:
-            lines = []
-            for entry in history:
+            embed.add_field(name="📊 Summary", value="✨ No infractions", inline=True)
+        
+        # Current status
+        status_parts = []
+        if user.is_timed_out():
+            timeout_until = user.timed_out_until
+            status_parts.append(f"🔇 Timed out until <t:{int(timeout_until.timestamp())}:R>")
+        
+        result = await db.fetch_one('SELECT xp_locked, xp_lock_until, is_restricted FROM users WHERE user_id = %s', (user.id,))
+        if result:
+            if result['xp_locked']:
+                if result.get('xp_lock_until'):
+                    status_parts.append(f"⛔ XP Locked until <t:{int(result['xp_lock_until'].timestamp())}:R>")
+                else:
+                    status_parts.append("⛔ XP Locked")
+            if result['is_restricted']:
+                status_parts.append("🔒 Restricted")
+        
+        if status_parts:
+            embed.add_field(name="⚠️ Active Penalties", value="\n".join(status_parts), inline=False)
+        else:
+            embed.add_field(name="✅ Status", value="No active penalties", inline=False)
+        
+        # Moderation history entries
+        if not history:
+            embed.add_field(
+                name="📜 History",
+                value="```\n✨ Clean record - no moderation actions\n```",
+                inline=False
+            )
+        else:
+            embed.add_field(name="─" * 20, value="**Recent Actions**", inline=False)
+            
+            for i, entry in enumerate(history[:8], 1):
                 icon = self._get_action_icon(entry['action_type'])
                 action = entry['action_type'].upper()
                 mod_id = entry['moderator_id']
-                reason = entry['reason'] or "No reason"
-                timestamp = entry['timestamp'].strftime('%Y-%m-%d') if entry['timestamp'] else "Unknown"
+                reason = entry['reason'] or "No reason provided"
                 
-                lines.append(f"{icon} **{action}** | <@{mod_id}> | {timestamp}\n└ {reason[:50]}")
+                # Format timestamp as Discord relative time
+                if entry['timestamp']:
+                    ts = int(entry['timestamp'].timestamp())
+                    time_str = f"<t:{ts}:R>"
+                else:
+                    time_str = "Unknown"
+                
+                # Truncate long reasons
+                if len(reason) > 100:
+                    reason = reason[:97] + "..."
+                
+                field_value = (
+                    f"**Moderator:** <@{mod_id}>\n"
+                    f"**When:** {time_str}\n"
+                    f"**Reason:** {reason}"
+                )
+                
+                embed.add_field(
+                    name=f"{icon} {action}",
+                    value=field_value,
+                    inline=True
+                )
             
-            embed.add_field(name="Last 10 Actions", value="\n\n".join(lines[:5]), inline=False)
-            if len(lines) > 5:
-                embed.add_field(name="​", value="\n\n".join(lines[5:]), inline=False)
-        
-        # Add current status
-        status_parts = []
-        if user.is_timed_out():
-            status_parts.append("🔇 **Muted**")
-        
-        result = await db.fetch_one('SELECT xp_locked, is_restricted FROM users WHERE user_id = %s', (user.id,))
-        if result:
-            if result['xp_locked']:
-                status_parts.append("⛔ **XP Locked**")
-            if result['is_restricted']:
-                status_parts.append("🔒 **Restricted**")
-        
-        if status_parts:
-            embed.add_field(name="Current Status", value=" | ".join(status_parts), inline=False)
+            # Add note if there are more entries
+            if len(history) > 8:
+                embed.set_footer(text=f"Showing 8 of {len(history)} recent actions")
+            else:
+                embed.set_footer(text=f"Total: {len(history)} action(s) on record")
         
         await inter.response.send_message(embed=embed)
     
