@@ -24,8 +24,9 @@ class BoostCog(commands.Cog, name="Boost Tracker"):
         self.bot = bot
         self.recent_boosts = {}
         self.cooldown_seconds = 60
-        
-        # Start background tasks
+    
+    async def cog_load(self):
+        """Start background tasks when cog is loaded."""
         self.check_tier_promotions.start()
         self.weekly_spotlight.start()
     

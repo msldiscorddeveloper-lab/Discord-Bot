@@ -13,8 +13,6 @@ class SettingsService:
         # Channels
         "bot_channel_id": "0",
         "boost_announce_channel_id": "0",
-        "booster_chat_channel_id": "0",
-        "booster_lounge_vc_id": "0",
         "mod_log_channel_id": "0",
         "command_log_channel_id": "0",
         

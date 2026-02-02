@@ -89,6 +89,9 @@ class EmbedsCog(commands.Cog, name="Embeds"):
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+    
+    async def cog_load(self):
+        """Start background task when cog is loaded."""
         self.schedule_loop.start()
     
     def cog_unload(self):
