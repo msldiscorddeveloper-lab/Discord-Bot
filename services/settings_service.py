@@ -35,6 +35,9 @@ class SettingsService:
         
         # Emblem roles (stored as JSON dict)
         "booster_emblem_roles": "{}",
+        
+        # XP System toggle (0 = OFF, 1 = ON) - defaults to OFF
+        "xp_system_enabled": "0",
     }
     
     async def get(self, key: str) -> str:

@@ -62,8 +62,16 @@ class XpCog(commands.Cog, name="Leveling"):
     async def before_batch_update(self):
         await self.bot.wait_until_ready()
     
+    async def _is_xp_enabled(self) -> bool:
+        """Check if the XP system is enabled."""
+        return await settings_service.get_int("xp_system_enabled") == 1
+    
     async def _process_voice_xp(self):
         """Award XP to active voice channel participants."""
+        # Check if XP system is enabled
+        if not await self._is_xp_enabled():
+            return
+        
         if not self.bot.guilds:
             return
         
@@ -100,6 +108,10 @@ class XpCog(commands.Cog, name="Leveling"):
         if message.author.bot:
             return
         
+        # Check if XP system is enabled
+        if not await self._is_xp_enabled():
+            return
+        
         msg_config = XP_CONFIG["message"]
         
         if len(message.content) < msg_config["min_length"]:
@@ -121,6 +133,10 @@ class XpCog(commands.Cog, name="Leveling"):
     async def on_reaction_add(self, reaction: discord.Reaction, user: discord.User):
         """Award XP for reactions with caps."""
         if user.bot:
+            return
+        
+        # Check if XP system is enabled
+        if not await self._is_xp_enabled():
             return
         
         react_config = XP_CONFIG["reaction"]
@@ -170,6 +186,109 @@ class XpCog(commands.Cog, name="Leveling"):
         rank, xp = await xp_service.get_rank(target.id)
         embed = create_rank_embed(target, rank, xp)
         await inter.response.send_message(embed=embed)
+    
+    # ─────────────────────────────────────────────────────────────────────
+    # Admin Commands - XP System Control
+    # ─────────────────────────────────────────────────────────────────────
+    
+    @app_commands.command(name="xp-start", description="Start the XP system (enable XP gain)")
+    @app_commands.default_permissions(administrator=True)
+    async def xp_start(self, inter: discord.Interaction):
+        """Enable the XP system."""
+        current = await settings_service.get_int("xp_system_enabled")
+        if current == 1:
+            return await inter.response.send_message("⚠️ XP system is already running.", ephemeral=True)
+        
+        await settings_service.set("xp_system_enabled", "1")
+        
+        embed = discord.Embed(
+            title="✅ XP System Started",
+            description="Users can now earn XP from messages, voice, and reactions.",
+            color=discord.Color.green()
+        )
+        await inter.response.send_message(embed=embed)
+    
+    @app_commands.command(name="xp-stop", description="Stop the XP system (disable XP gain)")
+    @app_commands.default_permissions(administrator=True)
+    async def xp_stop(self, inter: discord.Interaction):
+        """Disable the XP system."""
+        current = await settings_service.get_int("xp_system_enabled")
+        if current == 0:
+            return await inter.response.send_message("⚠️ XP system is already stopped.", ephemeral=True)
+        
+        await settings_service.set("xp_system_enabled", "0")
+        
+        # Clear pending XP so nothing gets processed
+        self.pending_xp.clear()
+        
+        embed = discord.Embed(
+            title="⏹️ XP System Stopped",
+            description="XP gain is now disabled. Existing XP is preserved.",
+            color=discord.Color.orange()
+        )
+        await inter.response.send_message(embed=embed)
+    
+    @app_commands.command(name="xp-reset", description="Reset all user XP to zero")
+    @app_commands.default_permissions(administrator=True)
+    async def xp_reset(self, inter: discord.Interaction):
+        """Reset all XP data. Requires confirmation."""
+        from services.database import db
+        
+        # Create confirmation view
+        class ConfirmView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=30)
+                self.confirmed = False
+            
+            @discord.ui.button(label="Confirm Reset", style=discord.ButtonStyle.danger)
+            async def confirm(self, button_inter: discord.Interaction, button: discord.ui.Button):
+                self.confirmed = True
+                self.stop()
+                
+                # Reset all XP
+                await db.execute("UPDATE users SET xp = 0")
+                
+                embed = discord.Embed(
+                    title="🔄 XP Reset Complete",
+                    description="All user XP has been reset to 0.",
+                    color=discord.Color.red()
+                )
+                await button_inter.response.edit_message(embed=embed, view=None)
+            
+            @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+            async def cancel(self, button_inter: discord.Interaction, button: discord.ui.Button):
+                self.stop()
+                await button_inter.response.edit_message(
+                    content="❌ XP reset cancelled.",
+                    embed=None,
+                    view=None
+                )
+        
+        view = ConfirmView()
+        embed = discord.Embed(
+            title="⚠️ Confirm XP Reset",
+            description="**This will reset ALL user XP to 0.**\n\nThis action cannot be undone!",
+            color=discord.Color.red()
+        )
+        await inter.response.send_message(embed=embed, view=view, ephemeral=True)
+    
+    @app_commands.command(name="xp-status", description="Check if the XP system is running")
+    @app_commands.default_permissions(administrator=True)
+    async def xp_status(self, inter: discord.Interaction):
+        """Show XP system status."""
+        enabled = await settings_service.get_int("xp_system_enabled") == 1
+        pending_count = len(self.pending_xp)
+        pending_total = sum(self.pending_xp.values())
+        
+        embed = discord.Embed(
+            title="📊 XP System Status",
+            color=discord.Color.green() if enabled else discord.Color.red()
+        )
+        embed.add_field(name="Status", value="🟢 Running" if enabled else "🔴 Stopped", inline=True)
+        embed.add_field(name="Pending Users", value=str(pending_count), inline=True)
+        embed.add_field(name="Pending XP", value=str(pending_total), inline=True)
+        
+        await inter.response.send_message(embed=embed, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
