@@ -330,122 +330,186 @@ class ModCog(commands.Cog, name="Moderation"):
     @app_commands.command(name="history", description="View a user's moderation history (Rap Sheet)")
     @app_commands.default_permissions(moderate_members=True)
     async def history(self, inter: discord.Interaction, user: discord.Member):
-        """Display visual moderation history with improved layout."""
-        history = await mod_service.get_user_history(user.id, limit=10)
+        """Display visual moderation history with pagination."""
+        # Fetch more history for pagination
+        all_history = await mod_service.get_user_history(user.id, limit=50)
         
         # Count infractions by type
         action_counts = {}
-        for entry in history:
+        for entry in all_history:
             action = entry['action_type']
             action_counts[action] = action_counts.get(action, 0) + 1
         
-        # Determine embed color based on severity
-        if not history:
-            color = discord.Color.green()
-        elif len(history) >= 5:
-            color = discord.Color.red()
-        elif len(history) >= 2:
-            color = discord.Color.orange()
-        else:
-            color = discord.Color.yellow()
+        # ─────────────────────────────────────────────────────────────────
+        # Pagination Setup
+        # ─────────────────────────────────────────────────────────────────
         
-        embed = discord.Embed(
-            title="📋 Moderation History",
-            color=color
-        )
+        ITEMS_PER_PAGE = 5  # Actions per page to stay within embed limits
+        total_pages = max(1, (len(all_history) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
         
-        # User info header
-        account_age = (discord.utils.utcnow() - user.created_at).days
-        joined_days = (discord.utils.utcnow() - user.joined_at).days if user.joined_at else 0
-        
-        embed.set_author(
-            name=f"{user.display_name}",
-            icon_url=user.display_avatar.url
-        )
-        embed.set_thumbnail(url=user.display_avatar.url)
-        
-        # Summary stats
-        summary_lines = [
-            f"**User ID:** `{user.id}`",
-            f"**Account Age:** {account_age} days",
-            f"**Server Member:** {joined_days} days",
-        ]
-        embed.add_field(name="👤 User Info", value="\n".join(summary_lines), inline=True)
-        
-        # Infraction summary
-        if action_counts:
-            stats_lines = [f"{self._get_action_icon(k)} {k.title()}: **{v}**" for k, v in action_counts.items()]
-            embed.add_field(name="📊 Summary", value="\n".join(stats_lines), inline=True)
-        else:
-            embed.add_field(name="📊 Summary", value="✨ No infractions", inline=True)
-        
-        # Current status
-        status_parts = []
-        if user.is_timed_out():
-            timeout_until = user.timed_out_until
-            status_parts.append(f"🔇 Timed out until <t:{int(timeout_until.timestamp())}:R>")
-        
-        result = await db.fetch_one('SELECT xp_locked, xp_lock_until, is_restricted FROM users WHERE user_id = %s', (user.id,))
-        if result:
-            if result['xp_locked']:
-                if result.get('xp_lock_until'):
-                    status_parts.append(f"⛔ XP Locked until <t:{int(result['xp_lock_until'].timestamp())}:R>")
-                else:
-                    status_parts.append("⛔ XP Locked")
-            if result['is_restricted']:
-                status_parts.append("🔒 Restricted")
-        
-        if status_parts:
-            embed.add_field(name="⚠️ Active Penalties", value="\n".join(status_parts), inline=False)
-        else:
-            embed.add_field(name="✅ Status", value="No active penalties", inline=False)
-        
-        # Moderation history entries
-        if not history:
-            embed.add_field(
-                name="📜 History",
-                value="```\n✨ Clean record - no moderation actions\n```",
-                inline=False
-            )
-        else:
-            embed.add_field(name="─" * 20, value="**Recent Actions**", inline=False)
+        async def create_history_embed(page: int = 0) -> discord.Embed:
+            """Create the embed for a specific page."""
+            # Determine embed color based on severity
+            if not all_history:
+                color = discord.Color.green()
+            elif len(all_history) >= 5:
+                color = discord.Color.red()
+            elif len(all_history) >= 2:
+                color = discord.Color.orange()
+            else:
+                color = discord.Color.yellow()
             
-            for i, entry in enumerate(history[:8], 1):
-                icon = self._get_action_icon(entry['action_type'])
-                action = entry['action_type'].upper()
-                mod_id = entry['moderator_id']
-                reason = entry['reason'] or "No reason provided"
-                
-                # Format timestamp as Discord relative time
-                if entry['timestamp']:
-                    ts = int(entry['timestamp'].timestamp())
-                    time_str = f"<t:{ts}:R>"
-                else:
-                    time_str = "Unknown"
-                
-                # Truncate long reasons
-                if len(reason) > 100:
-                    reason = reason[:97] + "..."
-                
-                field_value = (
-                    f"**Moderator:** <@{mod_id}>\n"
-                    f"**When:** {time_str}\n"
-                    f"**Reason:** {reason}"
+            embed = discord.Embed(
+                title="📋 Moderation History",
+                color=color
+            )
+            
+            # User info header
+            account_age = (discord.utils.utcnow() - user.created_at).days
+            joined_days = (discord.utils.utcnow() - user.joined_at).days if user.joined_at else 0
+            
+            embed.set_author(
+                name=f"{user.display_name}",
+                icon_url=user.display_avatar.url
+            )
+            embed.set_thumbnail(url=user.display_avatar.url)
+            
+            # Summary section (compact)
+            summary_text = (
+                f"**ID:** `{user.id}` • "
+                f"**Account:** {account_age}d • "
+                f"**Member:** {joined_days}d"
+            )
+            embed.description = summary_text
+            
+            # Infraction summary
+            if action_counts:
+                stats_parts = [f"{self._get_action_icon(k)} {k.title()}: **{v}**" for k, v in action_counts.items()]
+                embed.add_field(name="📊 Infractions", value=" • ".join(stats_parts), inline=False)
+            
+            # Current status
+            status_parts = []
+            if user.is_timed_out():
+                timeout_until = user.timed_out_until
+                status_parts.append(f"🔇 Timeout <t:{int(timeout_until.timestamp())}:R>")
+            
+            result = await db.fetch_one('SELECT xp_locked, xp_lock_until, is_restricted FROM users WHERE user_id = %s', (user.id,))
+            if result:
+                if result['xp_locked']:
+                    if result.get('xp_lock_until'):
+                        status_parts.append(f"⛔ XP Lock <t:{int(result['xp_lock_until'].timestamp())}:R>")
+                    else:
+                        status_parts.append("⛔ XP Locked")
+                if result['is_restricted']:
+                    status_parts.append("🔒 Restricted")
+            
+            if status_parts:
+                embed.add_field(name="⚠️ Active Penalties", value=" • ".join(status_parts), inline=False)
+            
+            # Moderation history entries
+            if not all_history:
+                embed.add_field(
+                    name="📜 Recent Actions",
+                    value="✨ Clean record — no moderation actions on file.",
+                    inline=False
                 )
+            else:
+                # Get entries for current page
+                start_idx = page * ITEMS_PER_PAGE
+                end_idx = start_idx + ITEMS_PER_PAGE
+                page_entries = all_history[start_idx:end_idx]
+                
+                # Build action list as a single field (vertical)
+                action_lines = []
+                for entry in page_entries:
+                    icon = self._get_action_icon(entry['action_type'])
+                    action = entry['action_type'].upper()
+                    mod_id = entry['moderator_id']
+                    reason = entry['reason'] or "No reason"
+                    
+                    # Format timestamp
+                    if entry['timestamp']:
+                        ts = int(entry['timestamp'].timestamp())
+                        time_str = f"<t:{ts}:d>"  # Short date format
+                    else:
+                        time_str = "?"
+                    
+                    # Truncate reason
+                    if len(reason) > 60:
+                        reason = reason[:57] + "..."
+                    
+                    action_lines.append(
+                        f"{icon} **{action}** — {time_str}\n"
+                        f"   ↳ By <@{mod_id}>: {reason}"
+                    )
                 
                 embed.add_field(
-                    name=f"{icon} {action}",
-                    value=field_value,
-                    inline=True
+                    name="📜 Recent Actions",
+                    value="\n\n".join(action_lines),
+                    inline=False
                 )
             
-            # Add note if there are more entries
-            if len(history) > 8:
-                embed.set_footer(text=f"Showing 8 of {len(history)} recent actions")
+            # Footer with pagination info
+            if total_pages > 1:
+                embed.set_footer(text=f"Page {page + 1}/{total_pages} • {len(all_history)} total action(s)")
             else:
-                embed.set_footer(text=f"Total: {len(history)} action(s) on record")
+                embed.set_footer(text=f"{len(all_history)} action(s) on record")
+            
+            return embed
         
-        await inter.response.send_message(embed=embed)
+        # ─────────────────────────────────────────────────────────────────
+        # Pagination View
+        # ─────────────────────────────────────────────────────────────────
+        
+        if total_pages <= 1:
+            # No pagination needed
+            embed = await create_history_embed(0)
+            await inter.response.send_message(embed=embed)
+            return
+        
+        # Create pagination view
+        class HistoryPaginator(discord.ui.View):
+            def __init__(self, author_id: int):
+                super().__init__(timeout=120)
+                self.current_page = 0
+                self.author_id = author_id
+            
+            async def interaction_check(self, interaction: discord.Interaction) -> bool:
+                if interaction.user.id != self.author_id:
+                    await interaction.response.send_message(
+                        "❌ Only the command user can navigate pages.",
+                        ephemeral=True
+                    )
+                    return False
+                return True
+            
+            def update_buttons(self):
+                self.prev_btn.disabled = self.current_page == 0
+                self.next_btn.disabled = self.current_page >= total_pages - 1
+            
+            @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.secondary)
+            async def prev_btn(self, button_inter: discord.Interaction, button: discord.ui.Button):
+                self.current_page = max(0, self.current_page - 1)
+                self.update_buttons()
+                embed = await create_history_embed(self.current_page)
+                await button_inter.response.edit_message(embed=embed, view=self)
+            
+            @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary)
+            async def next_btn(self, button_inter: discord.Interaction, button: discord.ui.Button):
+                self.current_page = min(total_pages - 1, self.current_page + 1)
+                self.update_buttons()
+                embed = await create_history_embed(self.current_page)
+                await button_inter.response.edit_message(embed=embed, view=self)
+            
+            async def on_timeout(self):
+                # Disable buttons on timeout
+                for item in self.children:
+                    item.disabled = True
+        
+        view = HistoryPaginator(inter.user.id)
+        view.update_buttons()
+        embed = await create_history_embed(0)
+        await inter.response.send_message(embed=embed, view=view)
     
     @app_commands.command(name="warn", description="Issue a formal warning (applies 24h XP lock)")
     @app_commands.default_permissions(moderate_members=True)
