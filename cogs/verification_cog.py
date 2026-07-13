@@ -358,6 +358,117 @@ class VerificationCog(commands.Cog, name="verification"):
             ephemeral=True,
         )
 
+    @verify_group.command(name="force-remove", description="Remove a verification by MLBB UID (works for users who left).")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(mlbb_uid="The MLBB UID to unverify")
+    async def force_remove(self, interaction: discord.Interaction, mlbb_uid: int):
+        """Remove a verification record by MLBB UID, even if the user has left the server."""
+        await interaction.response.defer(ephemeral=True)
+
+        removed_info = await verification_service.unverify_by_uid(mlbb_uid)
+        if not removed_info:
+            return await interaction.followup.send(
+                f"❌ No verification found for MLBB UID `{mlbb_uid}`.", ephemeral=True
+            )
+
+        removed_user_id = removed_info['user_id']
+
+        # Best-effort: strip Verified role if user is still in the server
+        role_stripped = False
+        verified_role_id = await settings_service.get_int("verified_role_id")
+        if verified_role_id:
+            try:
+                member = await interaction.guild.fetch_member(removed_user_id)
+                role = interaction.guild.get_role(verified_role_id)
+                if role and role in member.roles:
+                    await member.remove_roles(role, reason="Admin force-remove verification")
+                    role_stripped = True
+            except discord.NotFound:
+                pass  # User left the server — expected
+            except discord.Forbidden:
+                logger.error(f"Cannot strip Verified role from {removed_user_id}")
+
+        # Confirmation embed
+        status_note = "✅ Verified role also stripped." if role_stripped else "ℹ️ User is not in the server — role strip skipped."
+        embed = discord.Embed(
+            title="🗑️ Verification Force-Removed",
+            description=(
+                f"**Removed record:**\n"
+                f"**Name:** {removed_info['full_name']}\n"
+                f"**MLBB UID:** {removed_info['mlbb_uid']}\n"
+                f"**Server:** {removed_info['mlbb_server']}\n"
+                f"**Discord ID:** `{removed_user_id}`\n\n"
+                f"{status_note}\n\n"
+                f"This MLBB UID is now free and can be re-verified."
+            ),
+            color=discord.Color.orange(),
+        )
+        embed.set_footer(text=f"Removed by {interaction.user.display_name}")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+        # Audit log to mod log channel
+        log_embed = discord.Embed(
+            title="🗑️ Verification Force-Removed",
+            color=discord.Color.orange(),
+        )
+        log_embed.add_field(name="Admin", value=interaction.user.mention, inline=True)
+        log_embed.add_field(name="Discord User", value=f"<@{removed_user_id}> (`{removed_user_id}`)", inline=True)
+        log_embed.add_field(name="MLBB UID", value=str(removed_info['mlbb_uid']), inline=True)
+        log_embed.add_field(name="Full Name", value=removed_info['full_name'], inline=True)
+        log_embed.add_field(name="Server", value=str(removed_info['mlbb_server']), inline=True)
+        log_embed.add_field(name="Role Stripped", value="Yes" if role_stripped else "No (not in server)", inline=True)
+
+        mod_log_id = await settings_service.get_int("mod_log_channel_id")
+        if mod_log_id:
+            log_channel = interaction.guild.get_channel(mod_log_id)
+            if log_channel:
+                try:
+                    await log_channel.send(embed=log_embed)
+                except discord.Forbidden:
+                    logger.error("Cannot send to mod log channel")
+
+    @verify_group.command(name="lookup", description="Look up verification info by Discord User ID.")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(user_id="Discord User ID (works for users who left)")
+    async def lookup_user(self, interaction: discord.Interaction, user_id: str):
+        """Look up a user's verification details by raw Discord User ID."""
+        # Validate numeric input
+        user_id_str = user_id.strip()
+        if not user_id_str.isdigit():
+            return await interaction.response.send_message(
+                "❌ **User ID must be a number.** Right-click a user → Copy User ID.",
+                ephemeral=True,
+            )
+
+        uid_int = int(user_id_str)
+        info = await verification_service.get_user_info(uid_int)
+
+        if not info:
+            return await interaction.response.send_message(
+                f"❌ No verification found for Discord user `{uid_int}`.",
+                ephemeral=True,
+            )
+
+        # Check MSL status
+        msl_status = "❌ No"
+        if verification_service.is_msl(info['mlbb_uid'], info['mlbb_server']):
+            nickname = verification_service.get_msl_nickname(info['mlbb_uid'], info['mlbb_server'])
+            msl_status = f"✅ Yes — **{nickname}**"
+
+        embed = discord.Embed(
+            title=f"🔍 Verification Lookup — User `{uid_int}`",
+            color=discord.Color.blue(),
+        )
+        embed.add_field(name="Discord User", value=f"<@{uid_int}>", inline=True)
+        embed.add_field(name="Full Name", value=info['full_name'], inline=True)
+        embed.add_field(name="MLBB UID", value=str(info['mlbb_uid']), inline=True)
+        embed.add_field(name="Server", value=str(info['mlbb_server']), inline=True)
+        embed.add_field(name="MSL Member", value=msl_status, inline=True)
+        if info.get('verified_at'):
+            embed.add_field(name="Verified At", value=f"<t:{int(info['verified_at'].timestamp())}:F>", inline=True)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     # ─── MSL SUBGROUP ────────────────────────────────────────────────────
 
     msl_group = app_commands.Group(

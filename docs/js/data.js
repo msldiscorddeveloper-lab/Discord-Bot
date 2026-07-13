@@ -1597,6 +1597,30 @@ const DB_DATA = [
                 ]
             },
             {
+                "syntax": "/verify force-remove",
+                "desc": "Remove a user's verification status by MLBB UID (works even if they left the server).",
+                "access": "admin",
+                "params": [
+                    {
+                        "name": "mlbb_uid",
+                        "type": "number",
+                        "required": true
+                    }
+                ]
+            },
+            {
+                "syntax": "/verify lookup",
+                "desc": "Look up verification info by Discord User ID (works even if they left the server).",
+                "access": "admin",
+                "params": [
+                    {
+                        "name": "user_id",
+                        "type": "string",
+                        "required": true
+                    }
+                ]
+            },
+            {
                 "syntax": "/msl refresh",
                 "desc": "Force refresh the MSL member cache from Google Sheets.",
                 "access": "admin",

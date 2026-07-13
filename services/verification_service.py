@@ -70,6 +70,24 @@ class VerificationService:
         logger.info(f"User {user_id} unverified")
         return True
 
+    async def unverify_by_uid(self, mlbb_uid: int) -> dict | None:
+        """
+        Remove a verification record by MLBB UID.
+        Returns the removed user's info dict if found, or None.
+        Used for users who left the server and can't be targeted by Discord ID.
+        """
+        info = await db.fetch_one(
+            "SELECT * FROM verified_users WHERE mlbb_uid = %s", (mlbb_uid,)
+        )
+        if not info:
+            return None
+
+        user_id = info['user_id']
+        await db.execute("DELETE FROM verified_users WHERE mlbb_uid = %s", (mlbb_uid,))
+        self._verified_cache.discard(user_id)
+        logger.info(f"User {user_id} unverified by UID {mlbb_uid}")
+        return info
+
     async def get_user_info(self, user_id: int) -> dict | None:
         """Get a user's full verification record."""
         return await db.fetch_one(
