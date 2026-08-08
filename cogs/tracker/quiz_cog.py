@@ -52,6 +52,76 @@ CSV_PATH = "MLBB Quiz Questions.csv"
 JOURNAL_PATH = "quiz_session_journal.json"
 
 
+class AddQuestionModal(discord.ui.Modal, title="➕ Add Quiz Question"):
+    question = discord.ui.TextInput(
+        label="Question",
+        style=discord.TextStyle.paragraph,
+        placeholder="e.g. The birthplace of the first generation of elves...",
+        required=True,
+        max_length=500,
+    )
+    answer = discord.ui.TextInput(
+        label="Answer",
+        placeholder="e.g. Emerald Woodland",
+        required=True,
+        max_length=200,
+    )
+
+    def __init__(self, cog):
+        super().__init__()
+        self.cog = cog
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # 1. Whitespace normalization
+        import re
+        q_text = re.sub(r'\s+', ' ', self.question.value).strip()
+        a_text = re.sub(r'\s+', ' ', self.answer.value).strip()
+
+        # 2. Empty after strip
+        if not q_text or not a_text:
+            return await interaction.response.send_message("❌ Question and answer cannot be empty or whitespace-only.", ephemeral=True)
+            
+        # 3. Minimum question length
+        if len(q_text) < 15:
+            return await interaction.response.send_message("❌ Question is too short (minimum 15 characters). Write a descriptive clue.", ephemeral=True)
+            
+        # 6. Duplicate question text
+        for q in self.cog.questions:
+            if q['question'].lower() == q_text.lower():
+                return await interaction.response.send_message(f"❌ This question already exists as **{q['id']}**.", ephemeral=True)
+
+        warnings = []
+        # 5. Answer length warning
+        if len(a_text) > 50:
+            warnings.append(f"Note: This answer is quite long ({len(a_text)} chars). Players must type it exactly in 20 seconds.")
+
+        # 7. Duplicate answer warning
+        dup_ans_id = None
+        for q in self.cog.questions:
+            if q['answer'].lower() == a_text.lower():
+                dup_ans_id = q['id']
+                break
+        if dup_ans_id:
+            warnings.append(f"Note: Another question ({dup_ans_id}) already has the same answer.")
+
+        new_id = self.cog._get_next_question_id()
+        try:
+            self.cog._append_question_to_csv(new_id, q_text, a_text)
+            self.cog.questions.append({"id": new_id, "question": q_text, "answer": a_text})
+        except Exception as e:
+            return await interaction.response.send_message(f"❌ Failed to save question: {e}", ephemeral=True)
+            
+        embed = discord.Embed(title="✅ Question Added", color=discord.Color.green())
+        embed.add_field(name="ID", value=new_id, inline=False)
+        embed.add_field(name="Question", value=q_text, inline=False)
+        embed.add_field(name="Answer", value=a_text, inline=False)
+        
+        if warnings:
+            embed.description = "⚠️ **Warnings:**\n" + "\n".join(warnings)
+            
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
 class QuizCog(commands.Cog, name="quiz"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -851,6 +921,93 @@ class QuizCog(commands.Cog, name="quiz"):
         embed.add_field(name="Schedule", value="Noon & 8:00 PM PHT daily", inline=True)
         embed.add_field(name="Rounds/Session", value=f"**{ROUNDS_PER_SESSION}**", inline=True)
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @quiz_group.command(name="add", description="Add a new quiz question.")
+    async def quiz_add(self, interaction: discord.Interaction):
+        if self.session_active:
+            return await interaction.response.send_message("❌ Can't add questions while a session is running.", ephemeral=True)
+        await interaction.response.send_modal(AddQuestionModal(self))
+
+    @quiz_group.command(name="remove", description="Remove a quiz question by ID.")
+    async def quiz_remove(self, interaction: discord.Interaction, question_id: str):
+        if self.session_active:
+            return await interaction.response.send_message("❌ Can't remove questions while a session is running.", ephemeral=True)
+            
+        q = self._find_question_by_id(question_id)
+        if not q:
+            return await interaction.response.send_message(f"❌ No question found with ID **{question_id}**.", ephemeral=True)
+            
+        try:
+            self._remove_question_from_csv(question_id)
+            self.questions.remove(q)
+            if question_id in self._used_question_ids:
+                self._used_question_ids.remove(question_id)
+        except Exception as e:
+            return await interaction.response.send_message(f"❌ Failed to remove question: {e}", ephemeral=True)
+            
+        embed = discord.Embed(title="🗑️ Question Removed", color=discord.Color.red())
+        embed.add_field(name="ID", value=q['id'], inline=False)
+        embed.add_field(name="Question", value=q['question'], inline=False)
+        embed.add_field(name="Answer", value=q['answer'], inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @quiz_remove.autocomplete("question_id")
+    async def quiz_remove_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        choices = []
+        current = current.lower()
+        for q in self.questions:
+            if current in q['id'].lower() or current in q['question'].lower():
+                display = f"{q['id']} — {q['question']}"
+                if len(display) > 100:
+                    display = display[:97] + "..."
+                choices.append(app_commands.Choice(name=display, value=q['id']))
+                if len(choices) >= 25:
+                    break
+        return choices
+
+    def _get_next_question_id(self) -> str:
+        max_num = 0
+        for q in self.questions:
+            qid = q.get('id', '')
+            if qid.startswith('Q') and qid[1:].isdigit():
+                max_num = max(max_num, int(qid[1:]))
+        return f"Q{max_num + 1:03d}"
+
+    def _append_question_to_csv(self, qid: str, question: str, answer: str):
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        csv_path = os.path.join(project_root, CSV_PATH)
+        
+        file_exists = os.path.exists(csv_path)
+        with open(csv_path, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            if not file_exists or os.path.getsize(csv_path) == 0:
+                writer.writerow(['ID', 'QUESTION', 'ANSWER'])
+            writer.writerow([qid, question, answer])
+
+    def _remove_question_from_csv(self, qid: str):
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        csv_path = os.path.join(project_root, CSV_PATH)
+        
+        if not os.path.exists(csv_path):
+            raise FileNotFoundError("CSV file not found.")
+            
+        rows = []
+        with open(csv_path, 'r', newline='', encoding='utf-8-sig') as f:
+            reader = csv.reader(f)
+            for row in reader:
+                if not row or row[0] == qid:
+                    continue
+                rows.append(row)
+                
+        with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerows(rows)
+
+    def _find_question_by_id(self, qid: str) -> dict | None:
+        for q in self.questions:
+            if q['id'] == qid:
+                return q
+        return None
 
     @app_commands.command(name="quiz-leaderboard", description="View all-time quiz EP earnings.")
     async def quiz_leaderboard(self, interaction: discord.Interaction):
