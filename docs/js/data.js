@@ -1461,6 +1461,24 @@ const DB_DATA = [
         ],
         "commands": [
             {
+                "syntax": "/quiz add",
+                "desc": "Add a new quiz question via an interactive form.",
+                "access": "admin",
+                "params": []
+            },
+            {
+                "syntax": "/quiz remove",
+                "desc": "Remove a quiz question by ID (with autocomplete).",
+                "access": "admin",
+                "params": [
+                    {
+                        "name": "question_id",
+                        "type": "string",
+                        "required": true
+                    }
+                ]
+            },
+            {
                 "syntax": "Step 1: /quiz reload",
                 "desc": "Reload quiz questions from CSV into memory.",
                 "access": "admin",
