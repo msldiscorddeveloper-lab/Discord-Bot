@@ -39,6 +39,12 @@ class BoosterRaffleCog(commands.Cog, name="Booster Raffle"):
     @tasks.loop(time=datetime.time(hour=8, minute=0, tzinfo=TZ_MANILA))
     async def weekly_raffle(self):
         """Executes automatically on Sunday at 8:00 AM UTC+8."""
+        # ── Auto-schedule toggle ──
+        auto_enabled = await settings_service.get_int("booster_raffle_auto_enabled")
+        if auto_enabled != 1:
+            logger.info("Weekly auto-raffle skipped — auto-schedule is disabled.")
+            return
+
         now = datetime.datetime.now(TZ_MANILA)
         if now.weekday() != 6:  # 0 is Monday, 6 is Sunday
             return
@@ -66,6 +72,12 @@ class BoosterRaffleCog(commands.Cog, name="Booster Raffle"):
         ISO week already has a recorded draw."""
         try:
             await self.bot.wait_until_ready()
+
+            # Respect auto-schedule toggle
+            auto_enabled = await settings_service.get_int("booster_raffle_auto_enabled")
+            if auto_enabled != 1:
+                return
+
             now = datetime.datetime.now(TZ_MANILA)
 
             # The current week's draw is scheduled for Sunday (ISO day 7) at 8:00 AM.
@@ -332,6 +344,57 @@ class BoosterRaffleCog(commands.Cog, name="Booster Raffle"):
     # ── Diagnostic Command ─────────────────────────────────────
 
     @app_commands.command(
+        name="booster-raffle-toggle",
+        description="Enable or disable the weekly automatic booster raffle (Admin only)"
+    )
+    @app_commands.describe(
+        mode="Set the raffle mode"
+    )
+    @app_commands.choices(mode=[
+        app_commands.Choice(name="Auto (weekly Sunday 8 AM)", value="auto"),
+        app_commands.Choice(name="Manual only (/force-booster-raffle)", value="manual"),
+    ])
+    @app_commands.default_permissions(administrator=True)
+    async def raffle_toggle(self, interaction: discord.Interaction, mode: str):
+        if mode == "auto":
+            current = await settings_service.get_int("booster_raffle_auto_enabled")
+            if current == 1:
+                return await interaction.response.send_message(
+                    "⚠️ Auto-raffle is already enabled.", ephemeral=True
+                )
+            await settings_service.set("booster_raffle_auto_enabled", "1")
+            embed = discord.Embed(
+                title="✅ Auto-Raffle Enabled",
+                description=(
+                    "The booster raffle will now run **automatically every Sunday at 8:00 AM (PHT)**.\n\n"
+                    "You can still use `/force-booster-raffle` at any time — "
+                    "the ISO-week dedup guard will prevent the auto draw from running again that same week."
+                ),
+                color=0x00FF00,
+                timestamp=datetime.datetime.now(TZ_MANILA)
+            )
+            await interaction.response.send_message(embed=embed)
+        else:
+            current = await settings_service.get_int("booster_raffle_auto_enabled")
+            if current != 1:
+                return await interaction.response.send_message(
+                    "⚠️ Auto-raffle is already disabled (manual-only mode).", ephemeral=True
+                )
+            await settings_service.set("booster_raffle_auto_enabled", "0")
+            embed = discord.Embed(
+                title="⏹️ Auto-Raffle Disabled",
+                description=(
+                    "The weekly Sunday auto-raffle is now **off**.\n"
+                    "Booster raffles will only run when you use `/force-booster-raffle`.\n\n"
+                    "All existing raffle history, tier weights, and export tools remain unaffected."
+                ),
+                color=0xFFA500,
+                timestamp=datetime.datetime.now(TZ_MANILA)
+            )
+            await interaction.response.send_message(embed=embed)
+
+
+    @app_commands.command(
         name="booster-raffle-status",
         description="Diagnostic check for the automated booster raffle system (Admin only)"
     )
@@ -342,6 +405,13 @@ class BoosterRaffleCog(commands.Cog, name="Booster Raffle"):
         
         checks = []
         all_ok = True
+        
+        # 0. Auto-schedule mode
+        auto_enabled = await settings_service.get_int("booster_raffle_auto_enabled")
+        if auto_enabled == 1:
+            checks.append("✅ **Auto-Schedule:** `Enabled` — weekly Sunday 8:00 AM (PHT)")
+        else:
+            checks.append("⏸️ **Auto-Schedule:** `Disabled` — manual-only mode (`/force-booster-raffle`)")
         
         # 1. Channel config
         channel_id = await settings_service.get_int("boost_public_channel_id")
@@ -441,10 +511,12 @@ class BoosterRaffleCog(commands.Cog, name="Booster Raffle"):
         next_unix = int(next_sunday.timestamp())
         
         checks.append(f"\n⏰ **Next Auto Raffle:**")
-        checks.append(f"  <t:{next_unix}:F> — <t:{next_unix}:R>")
-        
-        if raffle_ran:
-            checks.append(f"  *(Will be skipped — already ran this week)*")
+        if auto_enabled != 1:
+            checks.append(f"  ⏸️ *Disabled — auto-raffle will not fire. Use `/force-booster-raffle` to draw manually.*")
+        else:
+            checks.append(f"  <t:{next_unix}:F> — <t:{next_unix}:R>")
+            if raffle_ran:
+                checks.append(f"  *(Will be skipped — already ran this week)*")
         
         # 7. ISO week explanation
         checks.append(

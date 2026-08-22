@@ -437,6 +437,7 @@ async def help_command(inter: discord.Interaction):
                 ("**`/ep add / set / reset`**", "Manage user EP"),
                 ("**`/autorole`**", "Bulk-assign auto-role"),
                 ("**`/booster list`**", "List all server boosters"),
+                ("**`/booster-raffle-toggle`**", "Auto/manual raffle mode"),
                 ("**`/force-booster-raffle`**", "Force execute weekly raffle"),
                 ("**`/booster-raffle-status`**", "Diagnose auto raffle system"),
                 ("**`/booster-raffle-export`**", "Export latest raffle to CSV"),

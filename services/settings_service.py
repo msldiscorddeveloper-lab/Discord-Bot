@@ -53,6 +53,9 @@ class SettingsService:
         
         # Promo status tracking
         "promo_invite_url": "discord.gg/themslnetwork",
+        
+        # Booster raffle auto-schedule (0 = manual only, 1 = weekly auto)
+        "booster_raffle_auto_enabled": "0",
     }
 
     def __init__(self):
