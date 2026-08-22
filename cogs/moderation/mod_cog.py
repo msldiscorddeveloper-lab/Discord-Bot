@@ -1259,8 +1259,15 @@ class ModCog(commands.Cog, name="Moderation"):
         if message.author.bot or not message.guild or not message.mentions:
             return
 
-        # Don't warn admins pinging other admins
-        if message.author.guild_permissions.administrator:
+        # Don't warn admins or moderators pinging admins (allows escalation)
+        author_perms = message.author.guild_permissions
+        if (
+            author_perms.administrator
+            or author_perms.manage_messages
+            or author_perms.moderate_members
+            or author_perms.kick_members
+            or author_perms.ban_members
+        ):
             return
 
         # ── Determine the replied-to user (if this is a reply) ──────
