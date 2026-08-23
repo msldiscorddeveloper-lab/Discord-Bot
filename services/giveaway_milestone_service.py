@@ -38,14 +38,7 @@ class GiveawayMilestoneService:
         
         count = row['c'] if row else 0
 
-        # 2. Determine highest qualifying milestone
-        highest_milestone = None
-        for milestone in reversed(self.MILESTONES):
-            if count >= milestone:
-                highest_milestone = milestone
-                break
-
-        # 3. Resolve milestone roles from settings
+        # 2. Resolve milestone roles from settings FIRST
         role_map = {}
         for m in self.MILESTONES:
             role_id = await settings_service.get_int(f"giveaway_milestone_{m}")
@@ -54,33 +47,55 @@ class GiveawayMilestoneService:
                 if role:
                     role_map[m] = role
 
-        if not role_map:
-            # Roles aren't configured yet, silently skip
-            return False
+        # 3. Determine highest qualifying configured milestone
+        highest_milestone = None
+        for milestone in reversed(self.MILESTONES):
+            if count >= milestone and milestone in role_map:
+                highest_milestone = milestone
+                break
+
+        # 4. Resolve host role (1+ hosted)
+        host_role_id = await settings_service.get_int("giveaway_host_role_id")
+        host_role = guild.get_role(host_role_id) if host_role_id else None
 
         # 4. Compute roles to add and remove
-        correct_role = role_map.get(highest_milestone) if highest_milestone else None
-        
-        # All milestone roles the member currently has
-        current_milestone_roles = {r for m, r in role_map.items() if r in member.roles}
-        
-        # Target state: only the correct_role (or empty set if no milestone)
-        target_roles = {correct_role} if correct_role else set()
-        
-        roles_to_remove = current_milestone_roles - target_roles
-        roles_to_add = target_roles - current_milestone_roles
+        roles_to_remove = set()
+        roles_to_add = set()
+
+        # 5. Compute tiered milestone roles
+        if role_map:
+            correct_role = role_map.get(highest_milestone) if highest_milestone else None
+            
+            # All milestone roles the member currently has
+            current_milestone_roles = {r for m, r in role_map.items() if r in member.roles}
+            
+            # Target state: only the correct_role (or empty set if no milestone)
+            target_roles = {correct_role} if correct_role else set()
+            
+            roles_to_remove |= (current_milestone_roles - target_roles)
+            roles_to_add |= (target_roles - current_milestone_roles)
+
+        # 6. Compute host role (1+ hosted)
+        if host_role:
+            has_host_role = host_role in member.roles
+            should_have_host_role = count >= 1
+            
+            if should_have_host_role and not has_host_role:
+                roles_to_add.add(host_role)
+            elif not should_have_host_role and has_host_role:
+                roles_to_remove.add(host_role)
 
         # Short-circuit: nothing to change
         if not roles_to_remove and not roles_to_add:
             return False
 
-        # 5. Execute role changes
+        # 7. Execute role changes
         try:
             if roles_to_remove:
                 await member.remove_roles(*roles_to_remove, reason=f"Giveaway Milestone Eval: {count} hosted")
             
             if roles_to_add:
-                await member.add_roles(*roles_to_add, reason=f"Giveaway Milestone: {highest_milestone}+ hosted")
+                await member.add_roles(*roles_to_add, reason=f"Giveaway Milestone Eval: {count} hosted")
             
             return True
                 
@@ -101,13 +116,13 @@ class GiveawayMilestoneService:
         if not guild:
             return stats
 
-        # Fetch all qualifying hosts (>= 5 hosted raffles)
+        # Fetch all qualifying hosts (>= 1 hosted raffles)
         rows = await db.fetch_all('''
             SELECT COALESCE(hosted_by, host_id) as effective_host, COUNT(*) as hosted_count
             FROM event_raffles
             WHERE status != 'cancelled'
             GROUP BY effective_host
-            HAVING hosted_count >= 5
+            HAVING hosted_count >= 1
         ''')
 
         if not rows:

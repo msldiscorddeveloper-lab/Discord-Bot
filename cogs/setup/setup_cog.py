@@ -379,6 +379,27 @@ class SetupCog(commands.Cog, name="Setup"):
         )
         await inter.followup.send(embed=embed)
 
+    @setup_group.command(name="giveaway_host_role", description="Map the Giveaway Host role (1+ hosted raffles).")
+    @require_admin_auth()
+    @app_commands.describe(role="Role for hosting at least one giveaway")
+    async def setup_giveaway_host_role(self, inter: discord.Interaction, role: discord.Role):
+        await inter.response.defer(ephemeral=True)
+
+        # Validate it's not a tiered milestone role
+        tiered_keys = [f"giveaway_milestone_{m}" for m in [5, 10, 20, 50, 100]]
+        for key in tiered_keys:
+            if str(role.id) == str(await settings_service.get(key)):
+                return await inter.followup.send("❌ This role is already mapped as a tiered milestone role.", ephemeral=True)
+
+        # Store in settings
+        await settings_service.set("giveaway_host_role_id", str(role.id))
+
+        embed = discord.Embed(
+            title="⚙️ Giveaway Host Role Mapped",
+            description=f"✅ **1+ Hosted:** {role.mention}",
+            color=discord.Color.green()
+        )
+        await inter.followup.send(embed=embed)
     # ─────────────────────────────────────────────────────────────────────
     # End of Season Trigger
     # ─────────────────────────────────────────────────────────────────────

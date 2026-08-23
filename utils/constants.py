@@ -47,5 +47,8 @@ SETUP_SCHEMA = {
     "🛡️ Roles (Moderation)": [
         {"key": "muted_role_id", "name": "Muted", "type": "role", "cmd": "`/setup role muted <@role>`"},
         {"key": "restricted_role_id", "name": "Restricted", "type": "role", "cmd": "`/setup role restricted <@role>`"},
+    ],
+    "🎁 Roles (Giveaways)": [
+        {"key": "giveaway_host_role_id", "name": "Giveaway Host (1+ Hosted)", "type": "role", "cmd": "`/setup giveaway_host_role <@role>`"},
     ]
 }
