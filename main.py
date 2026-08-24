@@ -333,7 +333,7 @@ async def reload(inter: discord.Interaction, cog: str = None):
 async def ping(inter: discord.Interaction):
     """Check bot latency."""
     latency = round(bot.latency * 1000)
-    await inter.response.send_message(f"🏓 P@bot.tree.command(name="help", description="View all available commands")
+    await inter.response.send_message(f'🏓 P@bot.tree.command(name="help", description="View all available commands')
 async def help_command(inter: discord.Interaction):
     """Display paginated commands based on user's roles and permissions."""
     
