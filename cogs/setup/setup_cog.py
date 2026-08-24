@@ -27,30 +27,55 @@ class SetupCog(commands.Cog, name="Setup"):
     @setup_group.command(name="view", description="View all current bot settings & setup checklist")
     @require_admin_auth()
     async def setup_view(self, inter: discord.Interaction):
-        """View current bot settings and setup checklist."""
+        """View current bot settings and setup checklist split across pages."""
         settings = await settings_service.get_all()
         from utils.constants import SETUP_SCHEMA
+        from utils.paginator import EmbedPaginator
         
-        embed = discord.Embed(
-            title="⚙️ Bot Setup Checklist", 
-            description="A dynamic tracker of all configured features.",
+        # Base templates for pages
+        page_channels = discord.Embed(
+            title="⚙️ Bot Setup Checklist — Page 1/3", 
+            description="📢 **Channels Configuration**",
+            color=discord.Color.blue()
+        )
+        page_roles = discord.Embed(
+            title="⚙️ Bot Setup Checklist — Page 2/3", 
+            description="🎭 **Roles Configuration**",
+            color=discord.Color.blue()
+        )
+        page_cosmetics = discord.Embed(
+            title="⚙️ Bot Setup Checklist — Page 3/3", 
+            description="🎨 **Cosmetics Configuration**",
             color=discord.Color.blue()
         )
         
-        # Iterate over categories from schema
+        # Iterate over categories from schema and route to correct page
         for category, items in SETUP_SCHEMA.items():
             lines = []
+            is_channel_category = False
+            is_role_category = False
+            
             for item in items:
                 val = settings.get(item["key"], "0")
+                
+                # Determine which page this category belongs to based on its first item
+                if item["type"] == "channel":
+                    is_channel_category = True
+                elif item["type"] == "role":
+                    is_role_category = True
+                    
                 if val != "0":
                     mapped = f"<#{val}>" if item["type"] == "channel" else f"<@&{val}>"
                     lines.append(f"✅ **{item['name']}:** {mapped}")
                 else:
                     lines.append(f"❌ **{item['name']}:** Missing! → Use {item['cmd']}")
             
-            embed.add_field(name=category, value="\n".join(lines), inline=False)
-            
-        # Handle Cosmetics
+            if is_channel_category:
+                page_channels.add_field(name=category, value="\n".join(lines), inline=False)
+            elif is_role_category:
+                page_roles.add_field(name=category, value="\n".join(lines), inline=False)
+                
+        # Handle Cosmetics (Page 3)
         color_roles = await settings_service.get_color_roles()
         emblem_roles = await settings_service.get_emblem_roles()
         
@@ -67,9 +92,11 @@ class SetupCog(commands.Cog, name="Setup"):
         else:
             cosmetics_lines.append("❌ **Emblems:** None configured → Use `/setup emblem-add`")
             
-        embed.add_field(name="🎨 Cosmetics", value="\n".join(cosmetics_lines), inline=False)
+        page_cosmetics.add_field(name="🎨 Custom Roles", value="\n".join(cosmetics_lines), inline=False)
         
-        await inter.response.send_message(embed=embed, ephemeral=True)
+        pages = [page_channels, page_roles, page_cosmetics]
+        view = EmbedPaginator(pages, inter.user.id)
+        await inter.response.send_message(embed=pages[0], view=view, ephemeral=True)
     
     # ─────────────────────────────────────────────────────────────────────
     # Channel Setup

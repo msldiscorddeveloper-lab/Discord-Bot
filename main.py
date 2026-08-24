@@ -333,16 +333,12 @@ async def reload(inter: discord.Interaction, cog: str = None):
 async def ping(inter: discord.Interaction):
     """Check bot latency."""
     latency = round(bot.latency * 1000)
-    await inter.response.send_message(f"🏓 Pong! Latency: `{latency}ms`")
-
-
-@bot.tree.command(name="help", description="View all available commands")
+    await inter.response.send_message(f"🏓 P@bot.tree.command(name="help", description="View all available commands")
 async def help_command(inter: discord.Interaction):
-    """Display commands based on user's roles and permissions."""
+    """Display paginated commands based on user's roles and permissions."""
     
     # ─────────────────────────────────────────────────────────────────
     # Command Metadata: Define all commands with their category
-    # Categories: 'general', 'booster', 'admin'
     # ─────────────────────────────────────────────────────────────────
     
     COMMANDS = {
@@ -357,12 +353,78 @@ async def help_command(inter: discord.Interaction):
                 ("**`/event-leaderboard`**", "View top event attendees"),
                 ("**`/raffles`**", "View active raffles"),
                 ("**`/quiz-leaderboard`**", "View top MLBB quiz scorers"),
-                ("**`/thank <user>`**", "Thank someone (+10 XP)"),
+                ("**`/quests`**", "View your daily quests and progress"),
+            ]
+        },
+        "pomodoro": {
+            "emoji": "🍅",
+            "title": "Pomodoro",
+            "commands": [
                 ("**`/pomodoro start [users]`**", "Start a Pomodoro timer in your VC"),
                 ("**`/pomodoro add <user>`**", "Add someone to your Pomodoro session"),
                 ("**`/pomodoro leave`**", "Leave the Pomodoro session"),
                 ("**`/pomodoro stop`**", "End Pomodoro for everyone (creator only)"),
-                ("**`/quests`**", "View your daily quests and progress"),
+            ]
+        },
+        "social": {
+            "emoji": "🤗",
+            "title": "Social Interactions",
+            "commands": [
+                ("**`/social hug`**", "Hug someone"),
+                ("**`/social pat`**", "Pat someone"),
+                ("**`/social poke`**", "Poke someone"),
+                ("**`/social bonk`**", "Bonk someone"),
+                ("**`/social slap`**", "Slap someone"),
+                ("**`/social highfive`**", "Highfive someone"),
+                ("**`/social tickle`**", "Tickle someone"),
+                ("**`/social cuddle`**", "Cuddle someone"),
+                ("**`/social wave`**", "Wave at someone"),
+                ("**`/social wink`**", "Wink at someone"),
+                ("**`/social handhold`**", "Hold hands with someone"),
+                ("**`/social nom`**", "Nom someone"),
+                ("**`/social stare`**", "Stare at someone"),
+                ("**`/social pout`**", "Pout at someone"),
+            ]
+        },
+        "social_fun": {
+            "emoji": "🎲",
+            "title": "Social Fun",
+            "commands": [
+                ("**`/social ship`**", "Ship two people together"),
+                ("**`/social 8ball`**", "Ask the magic 8-ball"),
+            ]
+        },
+        "marriage": {
+            "emoji": "💍",
+            "title": "Marriage",
+            "commands": [
+                ("**`/social marriage propose`**", "Propose marriage to another member!"),
+                ("**`/social marriage divorce`**", "End your current marriage"),
+                ("**`/social marriage status`**", "View your or someone's marriage status"),
+            ]
+        },
+        "family": {
+            "emoji": "🏠",
+            "title": "Family",
+            "commands": [
+                ("**`/social family adopt`**", "Adopt another member into your family"),
+                ("**`/social family disown`**", "Remove a child from your family"),
+                ("**`/social family tree`**", "View your family tree"),
+            ]
+        },
+        "social_util": {
+            "emoji": "🚫",
+            "title": "Social Utility",
+            "commands": [
+                ("**`/social block`**", "Block social interactions from someone"),
+                ("**`/social unblock`**", "Unblock a user"),
+                ("**`/social thank`**", "Thank someone (+10 XP)"),
+            ]
+        },
+        "referrals": {
+            "emoji": "🔗",
+            "title": "Referrals",
+            "commands": [
                 ("**`/referral view`**", "View your referral code and stats"),
                 ("**`/referral link <code>`**", "Link a referral code"),
                 ("**`/referral leaderboard`**", "View top referrers"),
@@ -377,84 +439,6 @@ async def help_command(inter: discord.Interaction):
                 ("**`/booster emblem`**", "Choose an emblem badge"),
             ]
         },
-        "verification": {
-            "emoji": "📋",
-            "title": "Verification",
-            "commands": [
-                ("**`/verify deploy <channel>`**", "Post verification panel"),
-                ("**`/verify whois <uid>`**", "Look up user by MLBB UID"),
-                ("**`/verify update <user>`**", "Edit verification info"),
-                ("**`/verify remove <user>`**", "Remove verification"),
-            ]
-        },
-        "admin_voice": {
-            "emoji": "🎤",
-            "title": "Voice Channels",
-            "commands": [
-                ("**`/voice setup <channel>`**", "Set up auto-create VC"),
-                ("**`/voice remove <channel>`**", "Remove auto-create"),
-            ]
-        },
-        "admin_embeds": {
-            "emoji": "📝",
-            "title": "Embeds",
-            "commands": [
-                ("**`/embed send <channel> <link>`**", "Send/schedule embed"),
-                ("**`/embed edit <link>`**", "Edit existing embed"),
-                ("**`/embed download <link>`**", "Extract to Discohook"),
-                ("**`/embed manage`**", "Manage scheduled embeds"),
-                ("**`/embed logs <channel>`**", "Set embed log channel"),
-            ]
-        },
-        "admin_mod": {
-            "emoji": "🛡️",
-            "title": "Moderation",
-            "commands": [
-                ("**`/warn <user> <reason>`**", "Warning + 24h XP lock"),
-                ("**`/mute <user> <duration> [reason]`**", "Timeout (native Discord mute)"),
-                ("**`/unmute <user>`**", "Remove timeout"),
-                ("**`/restrict <user> <duration> [reason]`**", "Block images/embeds"),
-                ("**`/unrestrict <user>`**", "Restore access"),
-                ("**`/kick <user> [reason]`**", "Kick from server"),
-                ("**`/ban <user> [duration] [reason]`**", "Ban (perm wipes data)"),
-                ("**`/unban <user_id>`**", "Unban a user by ID"),
-                ("**`/purge <amount> [user]`**", "Bulk delete messages"),
-                ("**`/history <user>`**", "View mod history"),
-            ]
-        },
-        "admin_setup": {
-            "emoji": "⚙️",
-            "title": "Setup & Admin",
-            "commands": [
-                ("**`/admin auth`**", "Unlock heavy admin commands"),
-                ("**`/admin logout`**", "End admin session"),
-                ("**`/setup view`**", "View all current settings"),
-                ("**`/setup channel <type> <#ch>`**", "Set channels"),
-                ("**`/setup role <type> <@role>`**", "Set roles"),
-                ("**`/setup vc <type> <vc>`**", "Set voice channels"),
-                ("**`/xp start / stop / status`**", "Control XP system"),
-                ("**`/xp add / set / reset`**", "Manage user XP"),
-                ("**`/ep add / set / reset`**", "Manage user EP"),
-                ("**`/autorole`**", "Bulk-assign auto-role"),
-                ("**`/booster list`**", "List all server boosters"),
-                ("**`/booster-raffle-toggle`**", "Auto/manual raffle mode"),
-                ("**`/force-booster-raffle`**", "Force execute weekly raffle"),
-                ("**`/booster-raffle-status`**", "Diagnose auto raffle system"),
-                ("**`/booster-raffle-export`**", "Export latest raffle to CSV"),
-                ("**`/event …`**", "Event kiosk, placement, status + 8 more"),
-                ("**`/event raffle …`**", "Create, draw, reroll, cancel raffles"),
-                ("**`/analytics …`**", "12+ server analytics commands"),
-                ("**`/quiz start / stop / reload`**", "Quiz session controls"),
-                ("**`/ticket deploy / config / stats`**", "Ticket system"),
-                ("**`/verify msl …`**", "MSL sheet setup, refresh, check"),
-                ("**`/notification deploy [channel]`**", "Post notification role panel"),
-                ("**`/confessions deploy / sync`**", "Confessions panel + sync"),
-                ("**`/anon deploy / sync`**", "Anonymous messages panel + sync"),
-                ("**`/manage-quests`**", "Manage quest definition catalog"),
-                ("**`/referral previous`**", "Last week's referral stats"),
-                ("**`/reload [cog]`**", "Hot-reload cogs"),
-            ]
-        },
     }
     
     # ─────────────────────────────────────────────────────────────────
@@ -466,57 +450,81 @@ async def help_command(inter: discord.Interaction):
     is_booster = member.premium_since is not None if hasattr(member, 'premium_since') else False
     
     # Determine which categories to show
-    visible_categories = ["general"]
+    visible_categories = ["general", "pomodoro", "social", "social_fun", "marriage", "family", "social_util", "referrals"]
     
     if is_booster or is_admin:
         visible_categories.append("booster")
     
-    if is_admin:
-        visible_categories.extend(["admin_voice", "admin_embeds", "admin_mod", "admin_setup"])
-    
-    # ─────────────────────────────────────────────────────────────────
-    # Build the Embed
-    # ─────────────────────────────────────────────────────────────────
-    
     # Set title and color based on access level
     if is_admin:
-        title = "📖 Bot Commands (Admin View)"
+        title_base = "📖 Bot Commands (Admin View)"
         color = discord.Color.red()
-        description = "You have **admin** access. Showing all commands."
+        description = "You have **admin** access. Showing all user commands."
     elif is_booster:
-        title = "📖 Bot Commands (Booster View)"
+        title_base = "📖 Bot Commands (Booster View)"
         color = discord.Color(0xf47fff)  # Nitro pink
         description = "You have **booster** perks! Showing general + booster commands."
     else:
-        title = "📖 Bot Commands"
+        title_base = "📖 Bot Commands"
         color = discord.Color.blue()
         description = "Showing public commands available to everyone."
     
-    embed = discord.Embed(title=title, description=description, color=color)
+    # ─────────────────────────────────────────────────────────────────
+    # Build the Embed Pages
+    # ─────────────────────────────────────────────────────────────────
     
-    # Add fields for each visible category
+    from utils.paginator import EmbedPaginator
+    from config import DOCS_URL
+    
+    pages = []
+    current_embed = discord.Embed(title=title_base, description=description, color=color)
+    current_len = len(title_base) + len(description)
+    
     for cat_key in visible_categories:
         cat = COMMANDS[cat_key]
-        
-        # Format commands as "command — description"
         lines = [f"{cmd} — {desc}" for cmd, desc in cat["commands"]]
         value = "\n".join(lines)
         
-        embed.add_field(
-            name=f"{cat['emoji']} {cat['title']}",
-            value=value,
-            inline=False
-        )
+        field_name = f"{cat['emoji']} {cat['title']}"
+        field_len = len(field_name) + len(value)
+        
+        # If adding this field exceeds ~5000 chars, push to a new page
+        if current_len + field_len > 5000 and len(current_embed.fields) > 0:
+            pages.append(current_embed)
+            current_embed = discord.Embed(title=title_base, description=description, color=color)
+            current_len = len(title_base) + len(description)
+        
+        current_embed.add_field(name=field_name, value=value, inline=False)
+        current_len += field_len
+
+    # Add the last embed if it has fields
+    if len(current_embed.fields) > 0:
+        pages.append(current_embed)
+        
+    # Update titles and footers with page numbers
+    total_pages = len(pages)
+    for i, p in enumerate(pages):
+        p.title = f"{title_base} — Page {i+1}/{total_pages}"
+        
+        if is_admin:
+            footer_text = f"Page {i+1} of {total_pages} • 🔐 Admin commands → {DOCS_URL.split('://')[1]}"
+        elif is_booster:
+            footer_text = f"Page {i+1} of {total_pages} • 💜 Thank you for boosting!"
+        else:
+            footer_text = f"Page {i+1} of {total_pages} • 💎 Boost the server to unlock booster-exclusive commands!"
+            
+        p.set_footer(text=footer_text)
+
+    # ─────────────────────────────────────────────────────────────────
+    # Send Pagination
+    # ─────────────────────────────────────────────────────────────────
     
-    # Footer based on access level
-    if not is_admin and not is_booster:
-        embed.set_footer(text="� Boost the server to unlock booster-exclusive commands!")
-    elif is_booster and not is_admin:
-        embed.set_footer(text="💜 Thank you for boosting!")
+    if total_pages > 1:
+        view = EmbedPaginator(pages, inter.user.id)
+        await inter.response.send_message(embed=pages[0], view=view, ephemeral=True)
     else:
-        embed.set_footer(text="🔐 Administrator access granted")
-    
-    await inter.response.send_message(embed=embed, ephemeral=True)
+        # Just send the single embed without buttons if everything fits
+        await inter.response.send_message(embed=pages[0], ephemeral=True)
 
 
 async def main():

@@ -175,6 +175,18 @@ const DB_DATA = [
                 "params": []
             },
             {
+                "syntax": "/setup giveaway_host_role",
+                "desc": "Map the Giveaway Host role (1+ hosted raffles).",
+                "access": "admin",
+                "params": [
+                    {
+                        "name": "role",
+                        "type": "@role",
+                        "required": true
+                    }
+                ]
+            },
+            {
                 "syntax": "/setup giveaway_milestones",
                 "desc": "Map the 5 giveaway host milestone roles (5+, 10+, 20+, 50+, 100+ hosted raffles). Only the highest milestone role is kept.",
                 "access": "admin",
@@ -1133,6 +1145,11 @@ const DB_DATA = [
                 "desc": "Reroll mechanics support full-raffle redrawing or single-user replacements, ensuring existing winners are mathematically excluded from snatching the replaced slot."
             },
             {
+                "name": "Giveaway Host Role",
+                "type": "passive",
+                "desc": "Automatically assigns a 'Giveaway Host' role to anyone who has hosted at least one non-cancelled raffle. Independent from the tiered milestone roles."
+            },
+            {
                 "name": "Host Milestone Roles",
                 "type": "passive",
                 "desc": "Automatically awards escalating Discord roles at 5, 10, 20, 50, and 100 hosted giveaways. Only the highest milestone role is kept (replacement strategy). Community hosts (hosted_by) are prioritized; the raffle creator is credited when no community host is specified. Cancelled raffles do not count. Milestones are re-evaluated on every raffle deploy and cancel."
@@ -1245,13 +1262,25 @@ const DB_DATA = [
                 ]
             },
             {
-                "syntax": "Step 1: /booster-raffle-status",
+                "syntax": "Step 1: /booster-raffle-toggle",
+                "desc": "Enable or disable the weekly automatic booster raffle (Auto or Manual only mode).",
+                "access": "admin",
+                "params": [
+                    {
+                        "name": "mode",
+                        "type": "string",
+                        "required": true
+                    }
+                ]
+            },
+            {
+                "syntax": "Step 2: /booster-raffle-status",
                 "desc": "Diagnostic dashboard for the auto booster raffle: channel/role config, booster count, this-week execution status, and next scheduled time with Unix timestamps.",
                 "access": "admin",
                 "params": []
             },
             {
-                "syntax": "Step 2: /force-booster-raffle",
+                "syntax": "Step 3: /force-booster-raffle",
                 "desc": "Forcefully execute the weekly booster Diamond Raffle. Pings Server Booster role. Counts as this week's raffle (auto raffle won't re-run).",
                 "access": "admin",
                 "params": [
@@ -1263,13 +1292,13 @@ const DB_DATA = [
                 ]
             },
             {
-                "syntax": "Step 3: /booster-raffle-reroll-msl",
+                "syntax": "Step 4: /booster-raffle-reroll-msl",
                 "desc": "Retroactively exclude MSL members from the latest draw and reallocate slots to valid non-MSL boosters. Edits original announcement.",
                 "access": "admin",
                 "params": []
             },
             {
-                "syntax": "Step 4: /booster-raffle-export",
+                "syntax": "Step 5: /booster-raffle-export",
                 "desc": "Export the latest booster raffle winners to separated MSL and Non-MSL CSVs.",
                 "access": "admin",
                 "params": []

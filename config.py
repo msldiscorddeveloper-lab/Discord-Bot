@@ -57,6 +57,14 @@ XP_CONFIG = {
 BATCH_UPDATE_INTERVAL = 60
 
 # ─────────────────────────────────────────────────────────────────────
+# External Services
+# ─────────────────────────────────────────────────────────────────────
+
+# Web documentation console URL
+DOCS_URL = "https://discord-bot-omega-eight.vercel.app/#setup"
+
+
+# ─────────────────────────────────────────────────────────────────────
 # Booster Tier Configuration (role IDs stored in database via !setup)
 # ─────────────────────────────────────────────────────────────────────
 
