@@ -3,6 +3,7 @@ Moderation Cog - Visual moderation with slash commands and audit logging.
 Includes /history, /warn (XP lock), /mute, /restrict, /ban (economy wipe).
 """
 
+import asyncio
 import discord
 from datetime import datetime, timedelta
 from discord.ext import commands
@@ -19,6 +20,12 @@ class ModCog(commands.Cog, name="Moderation"):
     
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._pending_welcomes: list[discord.Member] = []
+        self._welcome_flush_task: asyncio.TimerHandle | None = None
+
+    def cog_unload(self):
+        if self._welcome_flush_task:
+            self._welcome_flush_task.cancel()
     
     # ─────────────────────────────────────────────────────────────────────
     # Helper Methods
@@ -308,22 +315,21 @@ class ModCog(commands.Cog, name="Moderation"):
     
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
-        """Assign auto-role to new members and re-grant Verified role if applicable."""
+        """Assign auto-role to new members, re-grant Verified role, and send welcome message."""
         if member.bot:
             return
         
         role = member.guild.get_role(self.AUTO_ROLE_ID)
         if not role:
             print(f"[ModCog] Auto-role {self.AUTO_ROLE_ID} not found in guild")
-            return
-        
-        try:
-            await member.add_roles(role, reason="Auto-role on join")
-            print(f"[ModCog] Assigned auto-role to {member.display_name}")
-        except discord.Forbidden as e:
-            print(f"[ModCog] Failed to assign auto-role to {member.display_name}: {e}")
-        except discord.HTTPException as e:
-            print(f"[ModCog] HTTP error assigning auto-role: {e}")
+        else:
+            try:
+                await member.add_roles(role, reason="Auto-role on join")
+                print(f"[ModCog] Assigned auto-role to {member.display_name}")
+            except discord.Forbidden as e:
+                print(f"[ModCog] Failed to assign auto-role to {member.display_name}: {e}")
+            except discord.HTTPException as e:
+                print(f"[ModCog] HTTP error assigning auto-role: {e}")
 
         # Re-grant Verified role if user was previously verified
         try:
@@ -338,6 +344,55 @@ class ModCog(commands.Cog, name="Moderation"):
                         print(f"[ModCog] Re-granted Verified role to {member.display_name}")
         except Exception as e:
             print(f"[ModCog] Error re-granting Verified role: {e}")
+
+        # Welcome message (debounced batching for flood protection)
+        welcome_channel_id = await settings_service.get_int("welcome_channel_id")
+        if welcome_channel_id:
+            self._pending_welcomes.append(member)
+
+            # Cancel existing timer (if any) and reset the 3-second debounce
+            if self._welcome_flush_task:
+                self._welcome_flush_task.cancel()
+            self._welcome_flush_task = self.bot.loop.call_later(
+                3.0, lambda: asyncio.create_task(self._flush_welcomes(welcome_channel_id))
+            )
+
+    async def _flush_welcomes(self, channel_id: int):
+        """Send queued welcome messages — individual embed or batched mention."""
+        members = self._pending_welcomes.copy()
+        self._pending_welcomes.clear()
+        self._welcome_flush_task = None
+
+        if not members:
+            return
+
+        channel = self.bot.get_channel(channel_id)
+        if not channel:
+            print(f"[ModCog] Welcome channel {channel_id} not found")
+            return
+
+        try:
+            if len(members) == 1:
+                # Single join → pure text embed (no thumbnail)
+                m = members[0]
+                embed = discord.Embed(
+                    description=f"👋 Hello {m.mention}, welcome to the server!",
+                    color=0x87CEEB,
+                    timestamp=discord.utils.utcnow()
+                )
+                embed.set_footer(text="MSL Network")
+                await channel.send(embed=embed)
+            else:
+                # Batch join → single or chunked plain message with all mentions
+                chunk_size = 50
+                for i in range(0, len(members), chunk_size):
+                    batch = members[i:i + chunk_size]
+                    mentions = ", ".join(m.mention for m in batch)
+                    await channel.send(f"👋 Welcome to the server, {mentions}!")
+        except discord.Forbidden:
+            print(f"[ModCog] Missing permissions to send welcome in #{channel.name}")
+        except discord.HTTPException as e:
+            print(f"[ModCog] Failed to send welcome message: {e}")
     
     # ─────────────────────────────────────────────────────────────────────
     # Slash Commands

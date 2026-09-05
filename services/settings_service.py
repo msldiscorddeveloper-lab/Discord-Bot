@@ -29,6 +29,7 @@ class SettingsService:
         # Moderation Channels
         "mod_log_channel_id": "0",
         "command_log_channel_id": "0",
+        "welcome_channel_id": "0",          # Channel for welcome messages
         
         # Tier roles
         "server_booster_role_id": "0",
