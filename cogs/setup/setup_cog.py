@@ -116,7 +116,7 @@ class SetupCog(commands.Cog, name="Setup"):
             "boost_public", "boost_admin",
             "modlog", "cmdlog", "event_log", "analytics_log",
             "leaderboard_weekly", "leaderboard_alltime", "leaderboard_log", "bot", "booster_chat", "level_alerts",
-            "confessions", "counting", "anon_messages", "anon_log", "welcome"
+            "confessions", "counting", "anon_messages", "anon_log", "welcome", "honeypot"
         ],
         channel: discord.TextChannel
     ):
@@ -148,8 +148,22 @@ class SetupCog(commands.Cog, name="Setup"):
             "anon_messages": "anon_messages_channel_id",
             "anon_log": "anon_log_channel_id",
             "welcome": "welcome_channel_id",
+            "honeypot": "honeypot_channel_id",
         }
         await settings_service.set(key_map[setting], str(channel.id))
+        
+        if setting == "honeypot":
+            embed = discord.Embed(
+                title="⚠️ DO NOT POST HERE ⚠️",
+                description="This channel is a honeypot exclusively made to catch spam/scam messages.\n\n**ANY MESSAGES SENT IN THIS CHANNEL WILL TRIGGER AN AUTOMATIC PERMANENT BAN.**",
+                color=discord.Color.red()
+            )
+            try:
+                await channel.send(embed=embed)
+            except discord.Forbidden:
+                await inter.response.send_message(f"✅ **{setting}** channel set to {channel.mention}, but I lack permissions to send the warning message there.", ephemeral=True)
+                return
+                
         await inter.response.send_message(f"✅ **{setting}** channel set to {channel.mention}", ephemeral=True)
     
     # ─────────────────────────────────────────────────────────────────────

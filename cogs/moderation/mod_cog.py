@@ -286,6 +286,134 @@ class ModCog(commands.Cog, name="Moderation"):
         
         return False, "Failed after multiple attempts."
     
+    async def _handle_honeypot_trigger(self, message: discord.Message):
+        """Auto-ban a user who posts in the honeypot channel.
+        
+        Sequence: evidence capture → delete message → DM user → wipe economy → ban → audit log → mod-log embed.
+        Staff members (admin/mod permissions) are silently exempted.
+        """
+        member = message.author
+
+        # ── 1. Staff / privileged immunity ───────────────────────────
+        perms = member.guild_permissions
+        if (
+            perms.administrator
+            or perms.manage_messages
+            or perms.moderate_members
+            or perms.kick_members
+            or perms.ban_members
+        ):
+            return  # Staff testing — silently ignore
+
+        # ── 2. Bot hierarchy guard ───────────────────────────────────
+        guild = message.guild
+        if member.top_role >= guild.me.top_role:
+            # Cannot ban — log warning to mod-log and abort
+            embed = discord.Embed(
+                title="⚠️ Honeypot — Cannot Ban",
+                description=(
+                    f"{member.mention} (`{member.id}`) posted in the honeypot channel "
+                    f"but has a role equal to or above mine. Manual action required."
+                ),
+                color=discord.Color.orange(),
+            )
+            embed.add_field(name="Message", value=message.content[:1024] or "*empty*", inline=False)
+            await self._log_to_channel(guild, embed)
+            return
+
+        # ── 3. Capture evidence before deletion ──────────────────────
+        evidence_content = message.content[:1024] or "*No text content*"
+        evidence_attachments = [a.url for a in message.attachments][:5]
+
+        # ── 4. Delete the trigger message and identical spam ─────────
+        try:
+            await message.delete()
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            pass  # Best-effort; ban still proceeds
+
+        deleted_duplicates = 0
+        if message.content:
+            for cached_msg in self.bot.cached_messages:
+                if (
+                    cached_msg.author.id == member.id
+                    and getattr(cached_msg.guild, 'id', None) == guild.id
+                    and cached_msg.id != message.id
+                    and cached_msg.content == message.content
+                ):
+                    try:
+                        await cached_msg.delete()
+                        deleted_duplicates += 1
+                    except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+                        pass
+
+        # ── 5. DM the user (before ban severs guild access) ──────────
+        reason = (
+            "Dear denizen, sharing phishing links or scams compromises "
+            "server safety and will result in an instant ban."
+        )
+        dm_sent = await self._notify_user(member, "banned permanently", reason, guild.name)
+
+        # ── 6. Wipe economy (perm ban behavior) ──────────────────────
+        await self._wipe_economy(member.id)
+
+        # ── 7. Execute the ban (delete_message_days=0: preserve other messages) ──
+        try:
+            await member.ban(
+                reason=f"[Honeypot] {reason}",
+                delete_message_days=0,
+            )
+        except discord.Forbidden:
+            # Edge case: lost permissions between check and ban
+            embed = discord.Embed(
+                title="❌ Honeypot Ban Failed — Missing Permissions",
+                description=f"Could not ban {member.mention} (`{member.id}`). Check bot permissions.",
+                color=discord.Color.red(),
+            )
+            await self._log_to_channel(guild, embed)
+            return
+        except discord.HTTPException as e:
+            embed = discord.Embed(
+                title="❌ Honeypot Ban Failed — API Error",
+                description=f"Discord API error banning {member.mention}: `{e}`",
+                color=discord.Color.red(),
+            )
+            await self._log_to_channel(guild, embed)
+            return
+
+        # ── 8. Audit log via mod_service ─────────────────────────────
+        await mod_service.log_action(
+            "ban",
+            guild.me.id,         # moderator = the bot itself
+            member.id,
+            f"PERM (Honeypot): {reason}",
+        )
+
+        # ── 9. Mod-log embed ─────────────────────────────────────────
+        embed = discord.Embed(
+            title="🍯 Honeypot — User Auto-Banned",
+            color=discord.Color.dark_red(),
+        )
+        embed.set_author(name=f"{member} ({member.id})", icon_url=member.display_avatar.url)
+        embed.add_field(name="User", value=f"{member.mention}", inline=True)
+        embed.add_field(name="Action", value="Permanent Ban", inline=True)
+        embed.add_field(name="Economy", value="⚠️ All data wiped", inline=True)
+        
+        cleanup_info = "Removed only the honeypot message"
+        if deleted_duplicates > 0:
+            cleanup_info = f"Removed honeypot message + {deleted_duplicates} duplicate spam messages across other channels"
+        embed.add_field(name="Spam Cleanup", value=cleanup_info, inline=False)
+        
+        embed.add_field(name="Trapped Message", value=evidence_content, inline=False)
+        if evidence_attachments:
+            embed.add_field(
+                name="Attachments",
+                value="\n".join(evidence_attachments),
+                inline=False,
+            )
+        embed.add_field(name="Reason", value=reason, inline=False)
+        embed.set_footer(text="DM sent" if dm_sent else "DM failed (user has DMs closed)")
+        await self._log_to_channel(guild, embed)
+        
     async def _apply_xp_lock(self, user_id: int, hours: int = 24):
         """Apply XP/Token lock to user."""
         lock_until = datetime.now() + timedelta(hours=hours)
@@ -1305,13 +1433,22 @@ class ModCog(commands.Cog, name="Moderation"):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        """Warn users who ping members with administrator permissions.
+        """Handle honeypot trigger and warn users who ping members with administrator permissions.
         
         Replies to admin messages are exempt — only direct @-mentions
         in the message body trigger the warning.
         """
         # Ignore bots, DMs, and messages with no mentions
-        if message.author.bot or not message.guild or not message.mentions:
+        if message.author.bot or not message.guild:
+            return
+
+        # ── Honeypot Channel Trap ────────────────────────────────────────
+        honeypot_channel_id = await settings_service.get_int("honeypot_channel_id")
+        if honeypot_channel_id and message.channel.id == honeypot_channel_id:
+            await self._handle_honeypot_trigger(message)
+            return  # Stop further processing (staff ping check is irrelevant)
+
+        if not message.mentions:
             return
 
         # Don't warn admins or moderators pinging admins (allows escalation)

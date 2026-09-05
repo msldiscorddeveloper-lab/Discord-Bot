@@ -31,6 +31,9 @@ class SettingsService:
         "command_log_channel_id": "0",
         "welcome_channel_id": "0",          # Channel for welcome messages
         
+        # Honeypot
+        "honeypot_channel_id": "0",         # Honeypot trap channel (auto-ban on message)
+        
         # Tier roles
         "server_booster_role_id": "0",
         "veteran_booster_role_id": "0",
