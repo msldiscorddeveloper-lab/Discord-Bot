@@ -905,6 +905,30 @@ class AnalyticsCog(commands.Cog, name="analytics"):
         embed = discord.Embed(title="🏷️ Opt-In Role Adoption", description="\n".join(lines) or "No roles found.", color=discord.Color.dark_teal())
         await interaction.followup.send(embed=embed)
 
+    @analytics_group.command(name="lfg", description="LFG system usage analytics.")
+    async def analytics_lfg(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        # All-time stats
+        all_time = await db.fetch_all("SELECT mode, COUNT(*) as cnt FROM lfg_pings GROUP BY mode ORDER BY cnt DESC")
+        # 7-day stats
+        seven_days = await db.fetch_all("SELECT mode, COUNT(*) as cnt FROM lfg_pings WHERE sent_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) GROUP BY mode ORDER BY cnt DESC")
+        # Overall Expiry Rate
+        expiry_data = await db.fetch_one("SELECT COUNT(*) as total, SUM(CASE WHEN deleted = TRUE THEN 1 ELSE 0 END) as deleted FROM lfg_pings")
+        
+        embed = discord.Embed(title="🎮 LFG Analytics", color=discord.Color.brand_green())
+        
+        all_time_str = "\n".join([f"**{row['mode'].title()}**: {row['cnt']} pings" for row in all_time]) or "No pings yet."
+        seven_days_str = "\n".join([f"**{row['mode'].title()}**: {row['cnt']} pings" for row in seven_days]) or "No pings in last 7 days."
+        
+        embed.add_field(name="All-Time by Mode", value=all_time_str, inline=True)
+        embed.add_field(name="Last 7 Days by Mode", value=seven_days_str, inline=True)
+        
+        if expiry_data and expiry_data['total'] > 0:
+            rate = round((expiry_data['deleted'] / expiry_data['total']) * 100, 1)
+            embed.add_field(name="Expiry Rate", value=f"**{rate}%** of pings auto-expired (or were deleted)", inline=False)
+            
+        await interaction.followup.send(embed=embed)
+
     # ─── SENTIMENT EXPORT ───────────────────────────────────────────
 
     sentiment_group = app_commands.Group(name="sentiment", description="Export messages for external LLM sentiment analysis.", parent=analytics_group)

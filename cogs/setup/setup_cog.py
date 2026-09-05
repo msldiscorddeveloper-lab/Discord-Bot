@@ -116,7 +116,7 @@ class SetupCog(commands.Cog, name="Setup"):
             "boost_public", "boost_admin",
             "modlog", "cmdlog", "event_log", "analytics_log",
             "leaderboard_weekly", "leaderboard_alltime", "leaderboard_log", "bot", "booster_chat", "level_alerts",
-            "confessions", "counting", "anon_messages", "anon_log", "welcome", "honeypot"
+            "confessions", "counting", "anon_messages", "anon_log", "welcome", "honeypot", "lfg"
         ],
         channel: discord.TextChannel
     ):
@@ -149,6 +149,7 @@ class SetupCog(commands.Cog, name="Setup"):
             "anon_log": "anon_log_channel_id",
             "welcome": "welcome_channel_id",
             "honeypot": "honeypot_channel_id",
+            "lfg": "lfg_channel_id",
         }
         await settings_service.set(key_map[setting], str(channel.id))
         
@@ -441,6 +442,63 @@ class SetupCog(commands.Cog, name="Setup"):
             description=f"✅ **1+ Hosted:** {role.mention}",
             color=discord.Color.green()
         )
+        await inter.followup.send(embed=embed)
+        
+    # ─────────────────────────────────────────────────────────────────────
+    # LFG Roles Setup
+    # ─────────────────────────────────────────────────────────────────────
+
+    @setup_group.command(name="lfg-roles", description="Associate the 6 LFG game mode roles.")
+    @require_admin_auth()
+    @app_commands.describe(
+        ranked="Role to ping for Ranked LFG",
+        classic="Role to ping for Classic LFG",
+        brawl="Role to ping for Brawl LFG",
+        mro="Role to ping for MRO LFG",
+        arcade="Role to ping for Arcade LFG",
+        magic_chess="Role to ping for Magic Chess LFG",
+    )
+    async def setup_lfg_roles(
+        self, inter: discord.Interaction,
+        ranked: discord.Role,
+        classic: discord.Role,
+        brawl: discord.Role,
+        mro: discord.Role,
+        arcade: discord.Role,
+        magic_chess: discord.Role,
+    ):
+        await inter.response.defer(ephemeral=True)
+
+        roles = [ranked, classic, brawl, mro, arcade, magic_chess]
+
+        # Validate no duplicates
+        if len({r.id for r in roles}) != len(roles):
+            return await inter.followup.send("❌ Each mode must map to a distinct role.", ephemeral=True)
+
+        mapping = [
+            ("lfg_role_ranked",      ranked),
+            ("lfg_role_classic",     classic),
+            ("lfg_role_brawl",       brawl),
+            ("lfg_role_mro",         mro),
+            ("lfg_role_arcade",      arcade),
+            ("lfg_role_magic_chess", magic_chess),
+        ]
+        for key, role in mapping:
+            await settings_service.set(key, str(role.id))
+
+        embed = discord.Embed(
+            title="⚙️ LFG Roles Mapped",
+            description=(
+                f"🏆 **Ranked:** {ranked.mention}\n"
+                f"⚔️ **Classic:** {classic.mention}\n"
+                f"🥊 **Brawl:** {brawl.mention}\n"
+                f"🤖 **MRO:** {mro.mention}\n"
+                f"🎮 **Arcade:** {arcade.mention}\n"
+                f"♟️ **Magic Chess:** {magic_chess.mention}"
+            ),
+            color=discord.Color.green(),
+        )
+        embed.set_footer(text="Next: /setup channel lfg <#channel>, then /lfg-roles deploy")
         await inter.followup.send(embed=embed)
     # ─────────────────────────────────────────────────────────────────────
     # End of Season Trigger

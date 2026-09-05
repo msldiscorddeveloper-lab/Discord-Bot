@@ -79,7 +79,9 @@ async def on_ready():
     
     # Register persistent views (must be done before sync)
     from cogs.tracker.notification_cog import NotificationPanelView
+    from cogs.tracker.lfg_cog import LFGRolesPanelView
     bot.add_view(NotificationPanelView())
+    bot.add_view(LFGRolesPanelView())
     
     # Check for missing settings
     await check_missing_settings()
@@ -210,6 +212,7 @@ async def load_extensions():
         "cogs.tracker.social_cog",
         "cogs.tracker.promo_cog",
         "cogs.tracker.notification_cog",
+        "cogs.tracker.lfg_cog",
         "cogs.setup.setup_cog",
         "cogs.setup.auth_cog",
         "cogs.setup.test_cog",

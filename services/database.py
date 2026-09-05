@@ -805,6 +805,24 @@ class Database:
             )
         ''')
 
+        # ─── LFG SYSTEM ──────────────────────────────────────────────
+        await self.execute('''
+            CREATE TABLE IF NOT EXISTS lfg_pings (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                mode VARCHAR(30) NOT NULL,
+                message_id BIGINT DEFAULT NULL,
+                channel_id BIGINT NOT NULL,
+                expires_at DATETIME NOT NULL,
+                deleted BOOLEAN DEFAULT FALSE,
+                sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_lfg_sent (sent_at),
+                INDEX idx_lfg_mode (mode, sent_at),
+                INDEX idx_lfg_user (user_id, sent_at),
+                INDEX idx_lfg_expires (expires_at, deleted)
+            )
+        ''')
+
         # ─── MIGRATIONS: DIAMONDS SUPPORT ──────────────────────────────
         try:
             await self.execute("ALTER TABLE event_prize_pools ADD COLUMN diamond_reward INT DEFAULT 0")
@@ -812,6 +830,24 @@ class Database:
         try:
             await self.execute("ALTER TABLE guild_event_rewards ADD COLUMN diamonds_awarded INT DEFAULT 0")
         except: pass
+        
+        # ─── MIGRATIONS: LFG SYSTEM ────────────────────────────────────
+        lfg_cols = [
+            "lfg_ranked BOOLEAN DEFAULT FALSE",
+            "lfg_classic BOOLEAN DEFAULT FALSE",
+            "lfg_brawl BOOLEAN DEFAULT FALSE",
+            "lfg_mro BOOLEAN DEFAULT FALSE",
+            "lfg_arcade BOOLEAN DEFAULT FALSE",
+            "lfg_magic_chess BOOLEAN DEFAULT FALSE",
+            "lfg_last_ping DATETIME DEFAULT NULL"
+        ]
+        for col in lfg_cols:
+            try:
+                col_name = col.split()[0]
+                await self.execute(f"ALTER TABLE users ADD COLUMN {col}")
+            except Exception:
+                pass
+
     async def close(self):
         """Close the database connection."""
         if self._pool:

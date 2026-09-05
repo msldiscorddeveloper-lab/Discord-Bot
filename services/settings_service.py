@@ -34,6 +34,15 @@ class SettingsService:
         # Honeypot
         "honeypot_channel_id": "0",         # Honeypot trap channel (auto-ban on message)
         
+        # LFG System
+        "lfg_channel_id": "0",              # Channel where all LFG pings are posted
+        "lfg_role_ranked": "0",
+        "lfg_role_classic": "0",
+        "lfg_role_brawl": "0",
+        "lfg_role_mro": "0",
+        "lfg_role_arcade": "0",
+        "lfg_role_magic_chess": "0",
+        
         # Tier roles
         "server_booster_role_id": "0",
         "veteran_booster_role_id": "0",
