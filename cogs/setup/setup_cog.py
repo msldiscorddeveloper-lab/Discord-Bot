@@ -12,6 +12,48 @@ from services.settings_service import settings_service
 from utils.checks import require_admin_auth
 
 
+# Shared by /setup channel and /setup channel_clear — keep the Literal and map in sync.
+ChannelSetting = Literal[
+    "message_log", "ticket_log", "voice_log", "giveaway_log",
+    "boost_public", "boost_admin",
+    "modlog", "cmdlog", "event_log", "analytics_log",
+    "leaderboard_weekly", "leaderboard_alltime", "leaderboard_log", "bot", "booster_chat", "level_alerts",
+    "confessions", "counting", "anon_messages", "anon_log", "welcome", "honeypot", "lfg"
+]
+
+CHANNEL_KEY_MAP = {
+    # Log channels
+    "message_log": "message_log_channel_id",
+    "ticket_log": "ticket_log_channel_id",
+    "voice_log": "voice_log_channel_id",
+    "giveaway_log": "giveaway_log_channel_id",
+    # Boost channels
+    "boost_public": "boost_public_channel_id",
+    "boost_admin": "boost_admin_channel_id",
+    # Mod channels
+    "modlog": "mod_log_channel_id",
+    "cmdlog": "command_log_channel_id",
+    "event_log": "event_log_channel_id",
+    "analytics_log": "analytics_log_channel_id",
+    # System channels
+    "leaderboard_weekly": "leaderboard_weekly_channel_id",
+    "leaderboard_alltime": "leaderboard_alltime_channel_id",
+    "leaderboard_log": "leaderboard_log_channel_id",
+    "bot": "bot_channel_id",
+    "booster_chat": "booster_chat_channel_id",
+    # Leveling
+    "level_alerts": "level_alerts_channel_id",
+    # Community
+    "confessions": "confessions_channel_id",
+    "counting": "counting_channel_id",
+    "anon_messages": "anon_messages_channel_id",
+    "anon_log": "anon_log_channel_id",
+    "welcome": "welcome_channel_id",
+    "honeypot": "honeypot_channel_id",
+    "lfg": "lfg_channel_id",
+}
+
+
 class SetupCog(commands.Cog, name="Setup"):
     """Admin slash commands for bot configuration."""
     
@@ -111,47 +153,10 @@ class SetupCog(commands.Cog, name="Setup"):
     async def setup_channel(
         self, 
         inter: discord.Interaction, 
-        setting: Literal[
-            "message_log", "ticket_log", "voice_log", "giveaway_log",
-            "boost_public", "boost_admin",
-            "modlog", "cmdlog", "event_log", "analytics_log",
-            "leaderboard_weekly", "leaderboard_alltime", "leaderboard_log", "bot", "booster_chat", "level_alerts",
-            "confessions", "counting", "anon_messages", "anon_log", "welcome", "honeypot", "lfg"
-        ],
+        setting: ChannelSetting,
         channel: discord.TextChannel
     ):
-        key_map = {
-            # Log channels
-            "message_log": "message_log_channel_id",
-            "ticket_log": "ticket_log_channel_id",
-            "voice_log": "voice_log_channel_id",
-            "giveaway_log": "giveaway_log_channel_id",
-            # Boost channels
-            "boost_public": "boost_public_channel_id",
-            "boost_admin": "boost_admin_channel_id",
-            # Mod channels
-            "modlog": "mod_log_channel_id",
-            "cmdlog": "command_log_channel_id",
-            "event_log": "event_log_channel_id",
-            "analytics_log": "analytics_log_channel_id",
-            # System channels
-            "leaderboard_weekly": "leaderboard_weekly_channel_id",
-            "leaderboard_alltime": "leaderboard_alltime_channel_id",
-            "leaderboard_log": "leaderboard_log_channel_id",
-            "bot": "bot_channel_id",
-            "booster_chat": "booster_chat_channel_id",
-            # Leveling
-            "level_alerts": "level_alerts_channel_id",
-            # Community
-            "confessions": "confessions_channel_id",
-            "counting": "counting_channel_id",
-            "anon_messages": "anon_messages_channel_id",
-            "anon_log": "anon_log_channel_id",
-            "welcome": "welcome_channel_id",
-            "honeypot": "honeypot_channel_id",
-            "lfg": "lfg_channel_id",
-        }
-        await settings_service.set(key_map[setting], str(channel.id))
+        await settings_service.set(CHANNEL_KEY_MAP[setting], str(channel.id))
         
         if setting == "honeypot":
             embed = discord.Embed(
@@ -166,6 +171,24 @@ class SetupCog(commands.Cog, name="Setup"):
                 return
                 
         await inter.response.send_message(f"✅ **{setting}** channel set to {channel.mention}", ephemeral=True)
+    
+    @setup_group.command(name="channel_clear", description="Unset a channel setting (disables that feature's posts until set again)")
+    @require_admin_auth()
+    @app_commands.describe(setting="Which channel setting to clear")
+    async def setup_channel_clear(self, inter: discord.Interaction, setting: ChannelSetting):
+        key = CHANNEL_KEY_MAP[setting]
+        previous_id = await settings_service.get_int(key)
+        
+        if not previous_id:
+            return await inter.response.send_message(f"ℹ️ **{setting}** is already unset.", ephemeral=True)
+        
+        # "0" matches the default in SettingsService.KEYS, so this counts as not configured
+        await settings_service.set(key, "0")
+        await inter.response.send_message(
+            f"🧹 **{setting}** channel cleared (was <#{previous_id}>).\n"
+            f"To set it again: `/setup channel setting:{setting} channel:<#channel>`",
+            ephemeral=True
+        )
     
     # ─────────────────────────────────────────────────────────────────────
     # Role Setup
