@@ -490,6 +490,16 @@ class Database:
             await self.execute("ALTER TABLE analytics_daily_rollups ADD COLUMN granular_json MEDIUMTEXT DEFAULT NULL")
         except Exception:
             pass
+
+        # Serverless API rate limiting state (1 row per client/key hash, atomic window reset)
+        await self.execute('''
+            CREATE TABLE IF NOT EXISTS api_rate_limits (
+                rate_key VARCHAR(128) PRIMARY KEY,
+                window_start BIGINT NOT NULL,
+                request_count INT NOT NULL DEFAULT 1,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        ''')
         
         # Keyword match tracking for sentiment export
         await self.execute('''
