@@ -10,6 +10,7 @@ Rules:
   - Warnings reset when the user counts correctly or the chain resets
 """
 
+import asyncio
 import discord
 from discord.ext import commands
 import logging
@@ -33,8 +34,17 @@ class CountingCog(commands.Cog, name="Counting"):
         # Tracks users who have already received a warning for the CURRENT chain.
         self._warned: dict[int, set[int]] = {}
 
+        # Per-guild lock to prevent race conditions on simultaneous messages
+        self._locks: dict[int, asyncio.Lock] = {}
+
         # Cached counting channel ID (loaded once, invalidated on setting change)
         self._channel_id: int | None = None
+
+    def _get_lock(self, guild_id: int) -> asyncio.Lock:
+        """Get or create an asyncio.Lock for a guild."""
+        if guild_id not in self._locks:
+            self._locks[guild_id] = asyncio.Lock()
+        return self._locks[guild_id]
 
     async def cog_load(self):
         """Load counting state from DB into RAM cache."""
@@ -186,34 +196,41 @@ class CountingCog(commands.Cog, name="Counting"):
             reply_text += f"\n🏆 **New record!** Previous best was beaten — highest streak is now **{old_count}**!"
         await self._reply_safe(message, reply_text)
 
-    async def _warn_user(self, message: discord.Message, guild_id: int, warning: str):
+    async def _warn_user(self, message: discord.Message, guild_id: int, warning: str, is_offline_sync: bool = False):
         """Warn a user without breaking the chain."""
         warned = self._warned.setdefault(guild_id, set())
         warned.add(message.author.id)
 
-        await self._react_safe(message, "⚠️")
-        await self._reply_safe(message, warning)
+        state = self._get_state(guild_id)
+        await self._save_state(guild_id, state["count"], state["last_user_id"], message.id)
+
+        if not is_offline_sync:
+            await self._react_safe(message, "⚠️")
+            await self._reply_safe(message, warning)
 
     async def _process_counting_message(self, message: discord.Message, is_offline_sync: bool = False):
         guild_id = message.guild.id
         state = self._get_state(guild_id)
+
+        # Prevent duplicate or out-of-order processing between offline sync and live events
+        if state.get("last_message_id") and message.id <= state["last_message_id"]:
+            return
+
         user_id = message.author.id
         content = message.content.strip()
         warned_set = self._warned.get(guild_id, set())
 
-
-
         # ── Non-number message ──
-        if not content.isdigit():
+        if not (content.isascii() and content.isdigit()):
             if user_id in warned_set:
                 await self._break_chain(message, guild_id, "Non-number messages aren't allowed here.", is_offline_sync)
             else:
-                if not is_offline_sync:
-                    await self._warn_user(
-                        message, guild_id,
-                        "⚠️ Only numbers are allowed in the counting channel! "
-                        "Next time, the chain will break."
-                    )
+                await self._warn_user(
+                    message, guild_id,
+                    "⚠️ Only numbers are allowed in the counting channel! "
+                    "Next time, the chain will break.",
+                    is_offline_sync=is_offline_sync,
+                )
             return
 
         number = int(content)
@@ -224,12 +241,12 @@ class CountingCog(commands.Cog, name="Counting"):
             if user_id in warned_set:
                 await self._break_chain(message, guild_id, "You can't count twice in a row!", is_offline_sync)
             else:
-                if not is_offline_sync:
-                    await self._warn_user(
-                        message, guild_id,
-                        "⚠️ You can't count twice in a row! "
-                        "Let someone else go next. Another attempt will break the chain."
-                    )
+                await self._warn_user(
+                    message, guild_id,
+                    "⚠️ You can't count twice in a row! "
+                    "Let someone else go next. Another attempt will break the chain.",
+                    is_offline_sync=is_offline_sync,
+                )
             return
 
         # ── Wrong number ──
@@ -284,12 +301,12 @@ class CountingCog(commands.Cog, name="Counting"):
         if not channel_id or message.channel.id != channel_id:
             return
 
-        await self._process_counting_message(message, is_offline_sync=False)
+        async with self._get_lock(message.guild.id):
+            await self._process_counting_message(message, is_offline_sync=False)
 
     @commands.Cog.listener()
     async def on_ready(self):
         """When bot boots, sweep counting channels to catch up securely."""
-        import asyncio
         asyncio.create_task(self._sync_offline_counts())
 
     async def _sync_offline_counts(self):
@@ -303,29 +320,30 @@ class CountingCog(commands.Cog, name="Counting"):
             channel = guild.get_channel(channel_id)
             if not channel:
                 continue
-            
-            state = self._get_state(guild.id)
-            last_msg_id = state.get("last_message_id")
-            
-            if not last_msg_id:
-                # Can't sync without an anchored starting point
-                continue
-                
-            try:
-                # Fetch history ascending purely after the last verified DB node
-                logger.info(f"Counting: Initializing offline sync for guild {guild.id} starting from {last_msg_id}...")
-                offline_messages = []
-                async for msg in channel.history(limit=100, after=discord.Object(id=last_msg_id), oldest_first=True):
-                    if not msg.author.bot:
-                        offline_messages.append(msg)
-                
-                # Sequentially digest and validate the backlog
-                if offline_messages:
-                    for msg in offline_messages:
-                        await self._process_counting_message(msg, is_offline_sync=True)
-                    logger.info(f"Counting: Offline sync digested {len(offline_messages)} missed valid/invalid inputs.")
-            except Exception as e:
-                logger.error(f"Counting: Offline sync collapsed cleanly {e}")
+
+            async with self._get_lock(guild.id):
+                state = self._get_state(guild.id)
+                last_msg_id = state.get("last_message_id")
+
+                if not last_msg_id:
+                    # Can't sync without an anchored starting point
+                    continue
+
+                try:
+                    # Fetch history ascending purely after the last verified DB node
+                    logger.info(f"Counting: Initializing offline sync for guild {guild.id} starting from {last_msg_id}...")
+                    offline_messages = []
+                    async for msg in channel.history(limit=100, after=discord.Object(id=last_msg_id), oldest_first=True):
+                        if not msg.author.bot:
+                            offline_messages.append(msg)
+
+                    # Sequentially digest and validate the backlog
+                    if offline_messages:
+                        for msg in offline_messages:
+                            await self._process_counting_message(msg, is_offline_sync=True)
+                        logger.info(f"Counting: Offline sync digested {len(offline_messages)} missed valid/invalid inputs.")
+                except Exception as e:
+                    logger.error(f"Counting: Offline sync collapsed cleanly {e}")
 
     # ─── Invalidate channel cache when settings change ────────────
 
