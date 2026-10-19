@@ -125,6 +125,7 @@ API_DOCUMENTATION = {
                             "net_member_growth": "int",
                             "total_reactions": "int",
                             "total_threads": "int",
+                            "member_counts": "{total_members: int, human_members: int, verified_members: int, unverified_human_members: int, verification_rate_pct: float}",
                         },
                     },
                     "rollups": {
@@ -159,6 +160,7 @@ API_DOCUMENTATION = {
                         "fields": {
                             "window_days": "int",
                             "raw_message_window_days": "int (capped at 30 days raw retention)",
+                            "member_counts": "{total_members: int, human_members: int, verified_members: int, unverified_human_members: int, verification_rate_pct: float}",
                             "active_users": "{dau: int, wau: int, mau: int, wau_change_pct: float|null, mau_change_pct: float|null, stickiness_pct: float}",
                             "retention": "{day_1: {cohort_date: str, joined: int, retained: int, rate_pct: float}, day_7: {...}}",
                             "peak_hours_heatmap": "object mapping Monday..Sunday -> array of 24 hourly message counts (00:00..23:00)",

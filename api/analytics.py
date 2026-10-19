@@ -415,6 +415,46 @@ class handler(BaseHTTPRequestHandler):
         channel_cache = {r["channel_id"]: r["channel_name"] for r in cursor.fetchall()}
         return member_cache, channel_cache
 
+    def _fetch_member_counts(self, cursor) -> dict:
+        """Fetch current total, human, and verified member counts from DB."""
+        cursor.execute(
+            "SELECT `key`, value FROM server_settings WHERE `key` IN ('guild_member_count', 'guild_human_count')"
+        )
+        settings_map = {r["key"]: r["value"] for r in cursor.fetchall()}
+
+        try:
+            total_members = int(settings_map.get("guild_member_count", 0) or 0)
+        except ValueError:
+            total_members = 0
+
+        try:
+            human_members = int(settings_map.get("guild_human_count", 0) or 0)
+        except ValueError:
+            human_members = 0
+
+        cursor.execute("SELECT COUNT(*) AS c FROM verified_users")
+        v_row = cursor.fetchone()
+        verified_members = int(v_row["c"] or 0) if v_row else 0
+
+        # Fallback if bot hasn't synced member counts to server_settings yet
+        if total_members <= 0:
+            cursor.execute("SELECT COUNT(*) AS c FROM member_names")
+            mn_row = cursor.fetchone()
+            fallback_count = int(mn_row["c"] or 0) if mn_row else 0
+            total_members = fallback_count
+            human_members = fallback_count
+
+        unverified = max(0, human_members - verified_members)
+        verif_rate = round(verified_members / human_members * 100.0, 1) if human_members > 0 else 0.0
+
+        return {
+            "total_members": total_members,
+            "human_members": human_members,
+            "verified_members": verified_members,
+            "unverified_human_members": unverified,
+            "verification_rate_pct": verif_rate,
+        }
+
     def _fetch_rollups_and_kpi(
         self,
         cursor,
@@ -425,6 +465,7 @@ class handler(BaseHTTPRequestHandler):
         want_kpi: bool,
         member_cache: dict,
         channel_cache: dict,
+        member_counts: dict | None = None,
     ) -> tuple[list | None, dict | None]:
         """Fetch daily rollups within [start_date, end_date] and compute period KPIs."""
         if include_granular and want_rollups:
@@ -480,6 +521,8 @@ class handler(BaseHTTPRequestHandler):
                 "total_reactions": total_reactions,
                 "total_threads": total_threads,
             }
+            if member_counts:
+                kpi["member_counts"] = member_counts
 
         if not want_rollups:
             return None, kpi
@@ -688,7 +731,14 @@ class handler(BaseHTTPRequestHandler):
             "counting": counting_summary,
         }
 
-    def _fetch_live_metrics(self, cursor, days: int, member_cache: dict, channel_cache: dict) -> dict:
+    def _fetch_live_metrics(
+        self,
+        cursor,
+        days: int,
+        member_cache: dict,
+        channel_cache: dict,
+        member_counts: dict | None = None,
+    ) -> dict:
         """Fetch live raw-table metrics (DAU/WAU/MAU, stickiness, retention, peak hours, top channels, invites)."""
         # 1. Active Users (DAU / WAU / MAU + period-over-period changes)
         cursor.execute('''
@@ -864,7 +914,7 @@ class handler(BaseHTTPRequestHandler):
             for r in cursor.fetchall()
         ]
 
-        return {
+        res = {
             "window_days": days,
             "raw_message_window_days": raw_window_days,
             "active_users": {
@@ -881,6 +931,9 @@ class handler(BaseHTTPRequestHandler):
             "top_voice_channels": top_voice_channels,
             "top_invites": top_invites,
         }
+        if member_counts:
+            res["member_counts"] = member_counts
+        return res
 
     # ─── HTTP Verb Handlers ──────────────────────────────────────────
 
@@ -966,6 +1019,9 @@ class handler(BaseHTTPRequestHandler):
                 else:
                     member_cache, channel_cache = {}, {}
 
+                need_member_counts = "kpi" in sections or "live" in sections
+                member_counts = self._fetch_member_counts(cursor) if need_member_counts else None
+
                 if "rollups" in sections or "kpi" in sections:
                     rollups_data, kpi_data = self._fetch_rollups_and_kpi(
                         cursor=cursor,
@@ -976,6 +1032,7 @@ class handler(BaseHTTPRequestHandler):
                         want_kpi="kpi" in sections,
                         member_cache=member_cache,
                         channel_cache=channel_cache,
+                        member_counts=member_counts,
                     )
                     if "kpi" in sections:
                         data_payload["kpi"] = kpi_data
@@ -995,6 +1052,7 @@ class handler(BaseHTTPRequestHandler):
                         days=params["days"],
                         member_cache=member_cache,
                         channel_cache=channel_cache,
+                        member_counts=member_counts,
                     )
 
             response_obj = {

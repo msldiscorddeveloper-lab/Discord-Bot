@@ -171,10 +171,38 @@ class AnalyticsCog(commands.Cog, name="analytics"):
 
             logger.info(f"Identity cache synced: {member_count} members, {channel_count} channels")
 
+            # Sync live member counts to server_settings
+            await self._sync_member_counts()
+
             # Exhaustive Backfill: Scan all historical records and upgrade those in old format
             await self._auto_backfill_analytics()
         except Exception as e:
             logger.error(f"Identity cache sync error: {e}")
+
+    async def _sync_member_counts(self):
+        """Sync current guild member count and human count into server_settings cache.
+        Only writes to DB if the numbers have changed (dirty check)."""
+        if not self.bot.guilds:
+            return
+
+        guild = self.bot.guilds[0]
+        total_count = guild.member_count or len(guild.members)
+        if total_count <= 0:
+            return
+
+        bot_count = sum(1 for m in guild.members if m.bot)
+        human_count = max(0, total_count - bot_count)
+
+        try:
+            curr_total = await settings_service.get_int("guild_member_count")
+            if curr_total != total_count:
+                await settings_service.set("guild_member_count", str(total_count))
+
+            curr_human = await settings_service.get_int("guild_human_count")
+            if curr_human != human_count:
+                await settings_service.set("guild_human_count", str(human_count))
+        except Exception as e:
+            logger.error(f"Failed to sync member counts: {e}")
 
     async def _auto_backfill_analytics(self):
         """
@@ -474,6 +502,9 @@ class AnalyticsCog(commands.Cog, name="analytics"):
                     )
                 except Exception:
                     pass
+
+        # Sync member counts if changed (dirty check inside method prevents DB spam)
+        await self._sync_member_counts()
 
     @flush_buffer.before_loop
     async def before_flush(self):

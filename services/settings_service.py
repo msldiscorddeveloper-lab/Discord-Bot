@@ -69,6 +69,10 @@ class SettingsService:
         
         # Booster raffle auto-schedule (0 = manual only, 1 = weekly auto)
         "booster_raffle_auto_enabled": "0",
+
+        # Member count cache for external API & analytics
+        "guild_member_count": "0",
+        "guild_human_count": "0",
     }
 
     def __init__(self):

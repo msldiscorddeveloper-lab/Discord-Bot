@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const dateEndEl   = document.getElementById('date-end');
 
     let rawData = [];
+    let memberCounts = null;
     let charts  = {};
 
     // ── Chart.js Global Config ──
@@ -90,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const body = await res.json();
             if (body.success && body.data) {
                 rawData = body.data.sort((a, b) => a.date.localeCompare(b.date));
+                memberCounts = body.member_counts || null;
                 loader.innerText = "● Connected";
                 loader.style.color = "var(--green)";
                 setDateBounds('7d');
@@ -234,7 +236,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         setText('sub-msgs', `${(d.length > 0 ? Math.round(sumMsgs/d.length) : 0).toLocaleString()} avg/day`);
         setText('sub-vc',   `${(d.length > 0 ? Math.round(sumVc/d.length) : 0).toLocaleString()} avg/day`);
-        setText('sub-growth', `▲${sumJoins} joined · ▼${sumLeaves} left`);
+        if (memberCounts && memberCounts.total_members > 0) {
+            setText('sub-growth', `▲${sumJoins} · ▼${sumLeaves} (${memberCounts.total_members.toLocaleString()} total)`);
+            setText('sub-verifs', `${memberCounts.verified_members.toLocaleString()} total (${memberCounts.verification_rate_pct}%)`);
+        } else {
+            setText('sub-growth', `▲${sumJoins} joined · ▼${sumLeaves} left`);
+        }
         setText('sub-unique', `${maxUniqueVc} voice users peak`);
 
         setText('stat-quests', sumQuests.toLocaleString());

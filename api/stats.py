@@ -55,6 +55,38 @@ class handler(BaseHTTPRequestHandler):
                 cursor.execute("SELECT channel_id, channel_name FROM channel_names")
                 channel_cache = {r['channel_id']: r['channel_name'] for r in cursor.fetchall()}
 
+                # Query live member counts from server_settings & verified_users
+                cursor.execute(
+                    "SELECT `key`, value FROM server_settings WHERE `key` IN ('guild_member_count', 'guild_human_count')"
+                )
+                settings_map = {r['key']: r['value'] for r in cursor.fetchall()}
+                try:
+                    total_members = int(settings_map.get('guild_member_count', 0) or 0)
+                except ValueError:
+                    total_members = 0
+
+                try:
+                    human_members = int(settings_map.get('guild_human_count', 0) or 0)
+                except ValueError:
+                    human_members = 0
+
+                cursor.execute("SELECT COUNT(*) AS c FROM verified_users")
+                v_row = cursor.fetchone()
+                verified_members = int(v_row['c'] or 0) if v_row else 0
+
+                if total_members <= 0:
+                    fallback_count = len(member_cache)
+                    total_members = fallback_count
+                    human_members = fallback_count
+
+                member_counts = {
+                    "total_members": total_members,
+                    "human_members": human_members,
+                    "verified_members": verified_members,
+                    "unverified_human_members": max(0, human_members - verified_members),
+                    "verification_rate_pct": round(verified_members / human_members * 100.0, 1) if human_members > 0 else 0.0,
+                }
+
             connection.close()
 
             # Format types for JSON serialization + resolve names
@@ -86,7 +118,7 @@ class handler(BaseHTTPRequestHandler):
                     except Exception:
                         row['granular_json'] = {}
 
-            response = {"success": True, "data": rows}
+            response = {"success": True, "data": rows, "member_counts": member_counts}
             self.wfile.write(json.dumps(response, default=str).encode('utf-8'))
 
         except Exception as e:
